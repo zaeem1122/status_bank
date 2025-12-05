@@ -2,7 +2,7 @@
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart'; // Still useful for fallback if AndroidIntent completely fails
+import 'package:url_launcher/url_launcher.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -40,7 +40,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     String fullNumber = selectedCode + phone;
-    final String package = isBusiness ? "com.whatsapp.w4b" : "com.whatsapp.w4b";
+    final String package = isBusiness ? "com.whatsapp.w4b" : "com.whatsapp";
 
     // We'll use the wa.me link for the AndroidIntent data for better package forcing
     final Uri whatsappWebLink = Uri.parse("https://wa.me/$fullNumber?text=$message");
