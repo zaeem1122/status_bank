@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:android_intent_plus/flag.dart';
 import 'package:flutter/material.dart';
 import 'package:status_bank/widget.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -98,24 +100,25 @@ class _FullScreenStatus2State extends State<FullScreenStatus2> {
     }
   }
 
-  Future<void> repostToWhatsApp(String filePath) async {
-    final file = XFile(filePath);
-    await Share.shareXFiles(
-      [file],
-      text: "Reposting this status",
-      subject: "Status",
-    );
 
-    // final uri = Uri.parse("whatsapp://send?text=Reposting%this%status");
-    //
-    // if (await canLaunchUrl(uri)) {
-    //   await launchUrl(uri);
-    // } else {
-    //   ScaffoldMessenger.of(context).showSnackBar(
-    //     const SnackBar(content: Text("WhatsApp not installed")),
-    //   );
-    // }
-  }
+  // Future<void> repostToWhatsApp(String filePath) async {
+  //   final file = XFile(filePath);
+  //   await Share.shareXFiles(
+  //     [file],
+  //     text: "Reposting this status",
+  //     subject: "Status",
+  //   );
+  //
+  //   // final uri = Uri.parse("whatsapp://send?text=Reposting%this%status");
+  //   //
+  //   // if (await canLaunchUrl(uri)) {
+  //   //   await launchUrl(uri);
+  //   // } else {
+  //   //   ScaffoldMessenger.of(context).showSnackBar(
+  //   //     const SnackBar(content: Text("WhatsApp not installed")),
+  //   //   );
+  //   // }
+  // }
 
   Widget _buildContent(String path, int index) {
     if (path.endsWith(".mp4") || path.endsWith(".3gp")) {
@@ -192,10 +195,10 @@ class _FullScreenStatus2State extends State<FullScreenStatus2> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      IconButton(
-                        onPressed: () => repostToWhatsApp(path),
-                        icon: const Icon(Icons.repeat, color: Colors.white),
-                      ),
+                      // IconButton(
+                      //   onPressed: () => repostToWhatsApp(path, context),
+                      //   icon: const Icon(Icons.repeat, color: Colors.white),
+                      // ),
                       IconButton(
                         onPressed: () async {
                           await Share.shareXFiles([XFile(path)]);
@@ -239,10 +242,10 @@ class _FullScreenStatus2State extends State<FullScreenStatus2> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                IconButton(
-                  onPressed: () => repostToWhatsApp(path),
-                  icon: const Icon(Icons.repeat, color: Colors.white),
-                ),
+                // IconButton(
+                //   onPressed: () => repostToWhatsApp(path,context),
+                //   icon: const Icon(Icons.repeat, color: Colors.white),
+                // ),
                 IconButton(
                   onPressed: () async {
                     await Share.shareXFiles([XFile(path)]);
