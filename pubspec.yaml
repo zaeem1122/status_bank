@@ -44,6 +44,8 @@ dependencies:
   video_player: ^2.10.0
   shared_preferences: ^2.5.3
   google_mobile_ads: ^6.0.0
+  saf: ^1.0.4
+
 
 
 dev_dependencies:
