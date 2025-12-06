@@ -1,7 +1,7 @@
-
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
 import 'package:flutter/material.dart';
+import 'package:status_bank/widget.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -34,8 +34,7 @@ class _ChatScreenState extends State<ChatScreen> {
     String message = Uri.encodeComponent(_messageController.text.trim());
 
     if (phone.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Enter the Phone Number")));
+      showCustomOverlay(context, "Enter the Phone Number");
       return;
     }
 
@@ -46,7 +45,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final Uri whatsappWebLink = Uri.parse("https://wa.me/$fullNumber?text=$message");
     // Also keep the direct whatsapp:// URI as an ultimate fallback if all else fails
     final Uri whatsappDirectAppLink = Uri.parse("whatsapp://send?phone=$fullNumber&text=$message");
-
 
     try {
       // Attempt 1: Use AndroidIntent with wa.me link and specific package
@@ -88,150 +86,216 @@ class _ChatScreenState extends State<ChatScreen> {
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     } else {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("WhatsApp is not installed")));
+      showCustomOverlay(context, "WhatsApp is not installed");
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 360;
+    final isMediumScreen = screenWidth >= 360 && screenWidth < 600;
+    final isLargeScreen = screenWidth >= 600;
+
+    // Responsive sizing
+    final iconSize = isSmallScreen ? 100.0 : (isMediumScreen ? 130.0 : 150.0);
+    final fontSize = isSmallScreen ? 13.0 : 15.0;
+    final labelFontSize = isSmallScreen ? 12.0 : 14.0;
+    final buttonFontSize = isSmallScreen ? 13.0 : 15.0;
+    final horizontalPadding = isSmallScreen ? 12.0 : 16.0;
+    final verticalSpacing = isSmallScreen ? 8.0 : 10.0;
+    final borderWidth = isSmallScreen ? 2.0 : 3.0;
+    final dropdownPadding = isSmallScreen ? 6.0 : 8.0;
+    final buttonVerticalPadding = isSmallScreen ? 8.0 : 10.0;
+
+    // Calculate max width for large screens (tablets)
+    final contentMaxWidth = isLargeScreen ? 500.0 : double.infinity;
+
     return Scaffold(
       appBar: AppBar(
         foregroundColor: Colors.white,
-        title: const Padding(
-          padding: EdgeInsets.only(left: 8.0),
-          child: Text("Direct Chat",
-              style:
-              TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Padding(
+          padding: EdgeInsets.only(left: isSmallScreen ? 4.0 : 8.0),
+          child: Text(
+            "Direct Chat",
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: isSmallScreen ? 18.0 : 20.0,
+            ),
+          ),
         ),
         flexibleSpace: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-                colors: [Colors.teal, Color(0xFF05615B)],
-                begin: Alignment.centerLeft,
-                end: Alignment.bottomRight),
+              colors: [Colors.teal, Color(0xFF05615B)],
+              begin: Alignment.centerLeft,
+              end: Alignment.bottomRight,
+            ),
           ),
         ),
       ),
-      body: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.person,
-            size: 130,
-            color: Colors.teal,
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0, left: 16.0),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.teal, width: 3),
-                    borderRadius: BorderRadius.circular(10), // round corner
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Center(
+            child: Container(
+              constraints: BoxConstraints(maxWidth: contentMaxWidth),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  SizedBox(height: screenHeight * 0.02),
+                  Icon(
+                    Icons.person,
+                    size: iconSize,
+                    color: Colors.teal,
                   ),
-                  child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: selectedCode,
-                        items: countries.map((code) {
-                          return DropdownMenuItem<String>(
-                            value: code,
-                            child: Text(code, style: const TextStyle(fontSize: 15)),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            selectedCode = value!;
-                          });
-                        },
-                      )),
-                ),
-                const SizedBox(
-                  width: 10,
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                        label: Text("Phone Number"),
-                        labelStyle: TextStyle(color: Colors.teal),
+                  SizedBox(height: verticalSpacing),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: dropdownPadding,
+                            vertical: isSmallScreen ? 2 : 3,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.teal, width: borderWidth),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: selectedCode,
+                              items: countries.map((code) {
+                                return DropdownMenuItem<String>(
+                                  value: code,
+                                  child: Text(
+                                    code,
+                                    style: TextStyle(fontSize: fontSize),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (value) {
+                                setState(() {
+                                  selectedCode = value!;
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: verticalSpacing),
+                        Expanded(
+                          child: TextField(
+                            controller: _phoneController,
+                            keyboardType: TextInputType.number,
+                            style: TextStyle(fontSize: fontSize),
+                            decoration: InputDecoration(
+                              label: Text("Phone Number"),
+                              labelStyle: TextStyle(
+                                color: Colors.teal,
+                                fontSize: labelFontSize,
+                              ),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: isSmallScreen ? 10 : 12,
+                                vertical: isSmallScreen ? 12 : 14,
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.all(Radius.circular(10)),
+                                borderSide: BorderSide(width: 2, color: Colors.teal),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.all(Radius.circular(10)),
+                                borderSide: BorderSide(width: borderWidth, color: Colors.teal),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: verticalSpacing),
+                  Padding(
+                    padding: EdgeInsets.all(horizontalPadding),
+                    child: TextField(
+                      controller: _messageController,
+                      maxLines: 3,
+                      style: TextStyle(fontSize: fontSize),
+                      decoration: InputDecoration(
+                        labelText: "Message",
+                        labelStyle: TextStyle(
+                          color: Colors.teal,
+                          fontSize: labelFontSize,
+                        ),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: isSmallScreen ? 10 : 12,
+                          vertical: isSmallScreen ? 10 : 12,
+                        ),
                         focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.all(Radius.circular(
-                                10)),
-                            borderSide:
-                            BorderSide(width: 2, color: Colors.teal)),
+                          borderRadius: BorderRadius.all(Radius.circular(10)),
+                          borderSide: BorderSide(width: borderWidth, color: Colors.teal),
+                        ),
                         enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.all(Radius.circular(
-                                10)),
-                            borderSide:
-                            BorderSide(width: 3, color: Colors.teal))),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(
-            height: 10,
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _messageController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                  labelText: "Message",
-                  labelStyle: TextStyle(color: Colors.teal),
-                  focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.all(Radius.circular(10)),
-                      borderSide: BorderSide(width: 3, color: Colors.teal)),
-                  enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.all(Radius.circular(10)),
-                      borderSide: BorderSide(width: 3, color: Colors.teal))),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.only(left: 15.0, right: 15.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () =>
-                        _openWhatsapp(isBusiness: false),
-                    child: const Text(
-                      "Whatsapp",
-                      style: TextStyle(color: Colors.white, fontSize: 15),
+                          borderRadius: BorderRadius.all(Radius.circular(10)),
+                          borderSide: BorderSide(width: borderWidth, color: Colors.teal),
+                        ),
+                      ),
                     ),
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.teal,
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        )),
                   ),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => _openWhatsapp(isBusiness: true),
-                    child: const Text(
-                      "B.Whatsapp",
-                      style: TextStyle(color: Colors.white, fontSize: 15),
+                  SizedBox(height: isSmallScreen ? 15 : 20),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () => _openWhatsapp(isBusiness: false),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.teal,
+                              padding: EdgeInsets.symmetric(vertical: buttonVerticalPadding),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: Text(
+                              "Whatsapp",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: buttonFontSize,
+                              ),
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: isSmallScreen ? 12 : 20),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () => _openWhatsapp(isBusiness: true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.teal,
+                              padding: EdgeInsets.symmetric(vertical: buttonVerticalPadding),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: Text(
+                              "B.Whatsapp",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: buttonFontSize,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.teal,
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10))),
                   ),
-                ),
-              ],
+                  SizedBox(height: screenHeight * 0.02),
+                ],
+              ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }

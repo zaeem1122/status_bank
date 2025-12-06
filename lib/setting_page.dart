@@ -43,71 +43,214 @@ class _SettingPageState extends State<SettingPage> {
 
     if (value) {
       await widget.onAutoSaveEnabled();
-      showCustomOverlay(context, "Auto-Save Enabled",);
+      showCustomOverlay(context, "Auto-Save Enabled");
     } else {
-          showCustomOverlay(context, "Auto-Save Disabled",);
+      showCustomOverlay(context, "Auto-Save Disabled");
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 360;
+    final isMediumScreen = screenWidth >= 360 && screenWidth < 600;
+
+    // Responsive font sizes
+    final titleFontSize = isSmallScreen ? 13.0 : (isMediumScreen ? 14.0 : 16.0);
+    final subtitleFontSize = isSmallScreen ? 11.0 : (isMediumScreen ? 12.0 : 14.0);
+    final buttonFontSize = isSmallScreen ? 12.0 : 14.0;
+    final iconSize = isSmallScreen ? 24.0 : 28.0;
+
+    // Responsive padding
+    final containerPadding = isSmallScreen ? 8.0 : 12.0;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Settings", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(
+          "Settings",
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: isSmallScreen ? 18.0 : 20.0,
+          ),
+        ),
         flexibleSpace: Container(
           decoration: const BoxDecoration(
-            gradient: LinearGradient(colors: [Colors.teal, Color(0xFF05615B)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+            gradient: LinearGradient(
+              colors: [Colors.teal, Color(0xFF05615B)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
           ),
         ),
       ),
-      body: ListView(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.diamond, color: Colors.teal, size: 28),
-                    SizedBox(width: 8),
-                    Text("Remove All Ads\nEnjoy Status Saver without Ads", style: TextStyle(fontSize: 14)),
-                  ],
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProScreen())),
-                  child: const Text("Go PRO", style: TextStyle(color: Colors.white)),
-                ),
-              ],
-            ),
-          ),
-          const Divider(),
-          SwitchListTile(
-            title: const Text("Dark Theme"),
-            subtitle: const Text("Choose dark theme of the app"),
-            activeColor: Colors.teal,
-            value: widget.isDarkTheme,
-            onChanged: widget.onThemeChanged,
-          ),
-          const Divider(),
-          SwitchListTile(
-            title: const Text("Auto Save"),
-            subtitle: const Text("Save All Statuses With One Click"),
-            activeColor: Colors.teal,
-            value: autoSave,
-            onChanged: _saveAutoSave,
-          ),
-          const Divider(),
-          ListTile(title: const Text("Privacy Policy"), subtitle: const Text("Our Terms and Conditions")),
-          const Divider(),
-          ListTile(title: const Text("Share With Others"), subtitle: const Text("Share With Friends and Family")),
-          const Divider(),
-          ListTile(title: const Text("Rate Us"), subtitle: const Text("Rate our App")),
-          const Divider(),
-          ListTile(title: const Text("Version"), subtitle: const Text("Version 2.11.1.10")),
+      body: SafeArea(
+        child: ListView(
+          children: [
+            Container(
+              padding: EdgeInsets.all(containerPadding),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // For very small screens, stack vertically
+                  if (constraints.maxWidth < 320) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.diamond, color: Colors.teal, size: iconSize),
+                            SizedBox(width: isSmallScreen ? 6 : 8),
+                            Expanded(
+                              child: Text(
+                                "Remove All Ads\nEnjoy Status Saver without Ads",
+                                style: TextStyle(fontSize: titleFontSize),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.teal,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const ProScreen()),
+                            ),
+                            child: Text(
+                              "Go PRO",
+                              style: TextStyle(color: Colors.white, fontSize: buttonFontSize),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  }
 
-        ],
+                  // Default horizontal layout
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Icon(Icons.diamond, color: Colors.teal, size: iconSize),
+                            SizedBox(width: isSmallScreen ? 6 : 8),
+                            Expanded(
+                              child: Text(
+                                "Remove All Ads\nEnjoy Status Saver without Ads",
+                                style: TextStyle(fontSize: titleFontSize),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.teal,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isSmallScreen ? 12 : 16,
+                            vertical: isSmallScreen ? 8 : 12,
+                          ),
+                        ),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ProScreen()),
+                        ),
+                        child: Text(
+                          "Go PRO",
+                          style: TextStyle(color: Colors.white, fontSize: buttonFontSize),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            const Divider(),
+            SwitchListTile(
+              title: Text(
+                "Dark Theme",
+                style: TextStyle(fontSize: titleFontSize),
+              ),
+              subtitle: Text(
+                "Choose dark theme of the app",
+                style: TextStyle(fontSize: subtitleFontSize),
+              ),
+              activeColor: Colors.teal,
+              value: widget.isDarkTheme,
+              onChanged: widget.onThemeChanged,
+              contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
+            ),
+            const Divider(),
+            SwitchListTile(
+              title: Text(
+                "Auto Save",
+                style: TextStyle(fontSize: titleFontSize),
+              ),
+              subtitle: Text(
+                "Save All Statuses With One Click",
+                style: TextStyle(fontSize: subtitleFontSize),
+              ),
+              activeColor: Colors.teal,
+              value: autoSave,
+              onChanged: _saveAutoSave,
+              contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
+            ),
+            const Divider(),
+            ListTile(
+              title: Text(
+                "Privacy Policy",
+                style: TextStyle(fontSize: titleFontSize),
+              ),
+              subtitle: Text(
+                "Our Terms and Conditions",
+                style: TextStyle(fontSize: subtitleFontSize),
+              ),
+              contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
+            ),
+            const Divider(),
+            ListTile(
+              title: Text(
+                "Share With Others",
+                style: TextStyle(fontSize: titleFontSize),
+              ),
+              subtitle: Text(
+                "Share With Friends and Family",
+                style: TextStyle(fontSize: subtitleFontSize),
+              ),
+              contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
+            ),
+            const Divider(),
+            ListTile(
+              title: Text(
+                "Rate Us",
+                style: TextStyle(fontSize: titleFontSize),
+              ),
+              subtitle: Text(
+                "Rate our App",
+                style: TextStyle(fontSize: subtitleFontSize),
+              ),
+              contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
+            ),
+            const Divider(),
+            ListTile(
+              title: Text(
+                "Version",
+                style: TextStyle(fontSize: titleFontSize),
+              ),
+              subtitle: Text(
+                "Version 2.11.1.10",
+                style: TextStyle(fontSize: subtitleFontSize),
+              ),
+              contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
+            ),
+          ],
+        ),
       ),
     );
   }
