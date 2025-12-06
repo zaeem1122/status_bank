@@ -45,7 +45,7 @@ class _SavedPageState extends State<SavedPage>
       try {
         final files = directory.listSync();
         files.sort(
-          (a, b) => b.statSync().modified.compareTo(a.statSync().modified),
+              (a, b) => b.statSync().modified.compareTo(a.statSync().modified),
         );
         setState(() {
           savedFiles = files;
@@ -118,6 +118,14 @@ class _SavedPageState extends State<SavedPage>
     });
   }
 
+  // ===== NEW: DESELECT ALL =====
+  void deselectAll() {
+    setState(() {
+      selectedPaths.clear();
+      selectionMode = false;
+    });
+  }
+
   Future<void> deleteSelectedFiles() async {
     if (selectedPaths.isEmpty) return;
 
@@ -137,7 +145,8 @@ class _SavedPageState extends State<SavedPage>
           TextButton(
             onPressed: () {
               InterstitialService.show();
-              Navigator.pop(ctx, true);},
+              Navigator.pop(ctx, true);
+            },
             child: const Text("Delete", style: TextStyle(color: Colors.red)),
           ),
         ],
@@ -159,7 +168,7 @@ class _SavedPageState extends State<SavedPage>
     showCustomOverlay(context, "Selected files deleted");
   }
 
-  // ===== NEW: SHARE MULTIPLE FILES =====
+  // ===== SHARE MULTIPLE FILES =====
   Future<void> shareSelectedFiles() async {
     if (selectedPaths.isEmpty) return;
 
@@ -187,15 +196,21 @@ class _SavedPageState extends State<SavedPage>
 
     return Scaffold(
       appBar: AppBar(
+        leading: selectionMode
+            ? IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: deselectAll,
+        )
+            : null,
         title: selectionMode
             ? Text("${selectedPaths.length} Selected",
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600))
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w600))
             : const Text(
-                "Saved Status",
-                style:
-                    TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
+          "Saved Status",
+          style:
+          TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
         flexibleSpace: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -231,16 +246,14 @@ class _SavedPageState extends State<SavedPage>
                 Icons.share,
                 color: Colors.white,
               ),
-              onPressed:
-                shareSelectedFiles,
+              onPressed: shareSelectedFiles,
             ),
             IconButton(
               icon: const Icon(
                 Icons.delete,
                 color: Colors.white,
               ),
-              onPressed:
-                deleteSelectedFiles,
+              onPressed: deleteSelectedFiles,
             ),
           ],
         ],
@@ -320,11 +333,11 @@ class _SavedPageState extends State<SavedPage>
                   child: isVideo
                       ? VideoPreview(videoPath: path)
                       : Image.file(
-                          file,
-                          fit: BoxFit.cover,
-                          height: double.infinity,
-                          width: double.infinity,
-                        ),
+                    file,
+                    fit: BoxFit.cover,
+                    height: double.infinity,
+                    width: double.infinity,
+                  ),
                 ),
               ),
 
@@ -354,14 +367,16 @@ class _SavedPageState extends State<SavedPage>
                     children: [
                       IconButton(
                         onPressed: () {
-                          Share.shareXFiles([XFile(path)]);},
+                          Share.shareXFiles([XFile(path)]);
+                        },
                         icon: const Icon(Icons.share, color: Colors.white),
                         style: IconButton.styleFrom(
                             backgroundColor: Colors.black45),
                       ),
                       IconButton(
                         onPressed: () {
-                          _deleteFile(file);},
+                          _deleteFile(file);
+                        },
                         icon: const Icon(Icons.delete, color: Colors.white),
                         style: IconButton.styleFrom(
                             backgroundColor: Colors.black45),
