@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-
+import 'subscription_service.dart';
 
 class ProScreen extends StatefulWidget {
   const ProScreen({super.key});
@@ -9,125 +9,105 @@ class ProScreen extends StatefulWidget {
 }
 
 class _ProScreenState extends State<ProScreen> {
+  final SubscriptionService _subService = SubscriptionService();
+  bool isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _subService.init();
+  }
+
+  Future<void> subscribe() async {
+    setState(() => isLoading = true);
+    await _subService.buyMonthly();
+    await Future.delayed(Duration(seconds: 2));
+    setState(() => isLoading = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-         leading: IconButton(onPressed: () {
-          Navigator.pop(context);
-        }, icon: Icon(Icons.close)),
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: Icon(Icons.close),
+        ),
         flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [Colors.teal, Color(0xFF05615B)],
-                begin: Alignment.centerLeft,
-                end: Alignment.bottomRight,
-            )
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.teal, Color(0xFF05615B)],
+              begin: Alignment.centerLeft,
+              end: Alignment.bottomRight,
+            ),
           ),
-        )
+        ),
       ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 45.0, bottom: 60.0, left: 8.0, right: 8.0),
+            const Padding(
+              padding: EdgeInsets.only(top: 45.0, bottom: 60.0),
               child: Text(
                 "VIP Subscription",
                 style: TextStyle(
-                    color: Colors.teal,
-                    fontSize: 30,
-                    fontWeight: FontWeight.bold),
-              ),
-            ),
-            Row(
-              children: [
-                SizedBox(
-                  width: 50,
-                ),
-                Text("Status Saver", style: TextStyle(fontWeight: FontWeight.bold,fontSize: 20),),
-                SizedBox(
-                  width: 151,
-                ),
-                Icon(
-                  Icons.check,
                   color: Colors.teal,
-                  weight: 10,
-                  size: 30,
+                  fontSize: 30,
+                  fontWeight: FontWeight.bold,
                 ),
-              ],
+              ),
             ),
-            Row(
-              children: [
-                SizedBox(
-                  width: 50,
-                ),
-                Text("New Status Notification", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),),
-                SizedBox(
-                  width: 37,
-                ),
-                Icon(
-                  Icons.check,
-                  color: Colors.teal,
-                  weight: 10,
-                  size: 30,
-                ),
-              ],
-            ),
-            Row(children: [
-              SizedBox(
-                width: 50,
-              ),
-              Text("Remove Ads", style: TextStyle(fontWeight: FontWeight.bold,fontSize: 20),),
-              SizedBox(
-                width: 156,
-              ),
-              Icon(
-                Icons.check,
-                color: Colors.teal,
-                weight: 10,
-                size: 30,
-              )
-            ]),
-            Row(children: [
-              SizedBox(
-                width: 50,
-              ),
-              Text("Direct Chat", style: TextStyle(fontWeight: FontWeight.bold,fontSize: 20),),
-              SizedBox(
-                width: 170,
-              ),
-              Icon(
-                Icons.check,
-                color: Colors.teal,
-                weight: 10,
-                size: 30,
 
-              ),
-            ]),
-            Padding(
-              padding: const EdgeInsets.only(top: 360.0),
-              child: Text(
-                "Rs 2550.00/Year after 3-days FREE trail",
-              ),
+            buildFeature("Status Saver"),
+            buildFeature("Remove Ads"),
+            buildFeature("Direct Chat"),
+
+            const Spacer(),
+
+            const Text(
+              "Rs 280.00/Month to Remove Ads",
+              style: TextStyle(fontSize: 14),
             ),
+
             Padding(
-              padding: const EdgeInsets.only(right: 12.0, left: 12.0),
+              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 15),
               child: SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.teal,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: ()  {},
-                      child: Text(
-                        "START FREE TRAIL",
-                      ))),
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: isLoading ? null : subscribe,
+                  child: isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text("START FREE TRIAL"),
+                ),
+              ),
             ),
-            Text(
-                "You can cancel auto Subscription \n anytime from google play store",),
+
+            const Text(
+              "You can cancel auto subscription\nanytime from Google Play Store",
+              textAlign: TextAlign.center,
+            ),
+
+            SizedBox(height: 40),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget buildFeature(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 40),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const Icon(Icons.check, color: Colors.teal, size: 30),
+        ],
       ),
     );
   }
