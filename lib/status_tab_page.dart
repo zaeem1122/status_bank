@@ -299,7 +299,7 @@ class _StatusTabPageState extends State<StatusTabPage>
       if (await savedFile.exists()) {
         final fileSize = await savedFile.length();
         print('✅ File saved successfully: $savedPath (${fileSize} bytes)');
-        showCustomOverlay(context, "Saved to StatusSaver folder");
+        showCustomOverlay(context, "File Saved Successfully");
       } else {
         showCustomOverlay(context, "Failed to save file");
       }

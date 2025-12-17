@@ -291,8 +291,8 @@ class _FullScreenStatusOptimizedState extends State<FullScreenStatusOptimized> {
 
         // ✅ Show appropriate message based on Business or Regular
         final message = widget.isBusiness
-            ? "Saved to StatusSaver/Business folder"
-            : "Saved to StatusSaver folder";
+            ? "File Saved Successfully"
+            : "File Saved Successfully";
         showCustomOverlay(context, message);
       } else {
         showCustomOverlay(context, "Failed to save file");
