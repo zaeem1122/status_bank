@@ -674,7 +674,7 @@ class _StatusTabPageState extends State<StatusTabPage>
     if (showPermissionScreen && !isLoading && savedFolderUri == null) {
       return Scaffold(
         appBar: AppBar(
-          title: Text("Status Saver",
+          title: Text("Status Bank",
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           flexibleSpace: Container(
             decoration: BoxDecoration(
@@ -711,7 +711,7 @@ class _StatusTabPageState extends State<StatusTabPage>
                     backgroundColor: Colors.teal,
                     padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                   ),
-                  child: Text('Grant Access', style: TextStyle(fontSize: 18)),
+                  child: Text('Grant Access', style: TextStyle(fontSize: 18, color: Colors.white)),
                 ),
               ],
             ),
@@ -735,7 +735,7 @@ class _StatusTabPageState extends State<StatusTabPage>
                 ? Text("${selectedPaths.length} Selected",
                 style: const TextStyle(
                     color: Colors.white, fontWeight: FontWeight.w600))
-                : Text("Status Saver",
+                : Text("Status Bank",
                 style: TextStyle(
                     color: Colors.white, fontWeight: FontWeight.bold)),
             flexibleSpace: Container(

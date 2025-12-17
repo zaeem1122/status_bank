@@ -678,7 +678,7 @@ class _StatusTabPage2State extends State<StatusTabPage2>
     if (showPermissionScreen && !isLoading && savedFolderUri == null) {
       return Scaffold(
         appBar: AppBar(
-          title: Text("Business WhatsApp",
+          title: Text("Status Bank",
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           flexibleSpace: Container(
             decoration: BoxDecoration(
@@ -715,7 +715,7 @@ class _StatusTabPage2State extends State<StatusTabPage2>
                     backgroundColor: Colors.teal,
                     padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                   ),
-                  child: Text('Grant Access', style: TextStyle(fontSize: 18)),
+                  child: Text('Grant Access', style: TextStyle(fontSize: 18, color: Colors.white)),
                 ),
               ],
             ),
@@ -739,7 +739,7 @@ class _StatusTabPage2State extends State<StatusTabPage2>
                 ? Text("${selectedPaths.length} Selected",
                 style: const TextStyle(
                     color: Colors.white, fontWeight: FontWeight.w600))
-                : Text("Business WhatsApp",
+                : Text("Status Bank",
                 style: TextStyle(
                     color: Colors.white, fontWeight: FontWeight.bold)),
             flexibleSpace: Container(
