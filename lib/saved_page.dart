@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:mime/mime.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:status_bank/video_preview.dart';
 import 'package:status_bank/widget.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'full_screen_status2.dart';
 import 'interstitial_ad_service.dart';
@@ -37,25 +39,65 @@ class _SavedPageState extends State<SavedPage>
     super.dispose();
   }
 
-  // 🔹 Load all saved files (images + videos)
+  // 🔹 Load all saved files (images + videos) from both regular and Business folders
   Future<void> _loadSavedFiles() async {
-    final directory = Directory("/storage/emulated/0/StatusSaver");
+    try {
+      Directory mainDirectory;
+      Directory businessDirectory;
 
-    if (await directory.exists()) {
-      try {
-        final files = directory.listSync();
-        files.sort(
-              (a, b) => b.statSync().modified.compareTo(a.statSync().modified),
-        );
-        setState(() {
-          savedFiles = files;
-        });
-      } catch (e) {
-        debugPrint("Error loading files: $e");
-        setState(() => savedFiles = []);
+      // Check Android version
+      if (Platform.isAndroid) {
+        final androidInfo = await DeviceInfoPlugin().androidInfo;
+
+        if (androidInfo.version.sdkInt >= 29) {
+          // Android 10+ (API 29+): Use app-specific directory
+          final externalDir = await getExternalStorageDirectory();
+          mainDirectory = Directory('${externalDir!.path}/StatusSaver');
+          businessDirectory = Directory('${externalDir.path}/StatusSaver/Business');
+        } else {
+          // Android 9 and below: Use public directory
+          mainDirectory = Directory("/storage/emulated/0/StatusSaver");
+          businessDirectory = Directory("/storage/emulated/0/StatusSaver/Business");
+        }
+      } else {
+        // Fallback for non-Android platforms
+        final externalDir = await getExternalStorageDirectory();
+        mainDirectory = Directory('${externalDir!.path}/StatusSaver');
+        businessDirectory = Directory('${externalDir.path}/StatusSaver/Business');
       }
-    } else {
-      await directory.create(recursive: true);
+
+      List<FileSystemEntity> allFiles = [];
+
+      // Load files from main StatusSaver directory (excluding Business subfolder)
+      if (await mainDirectory.exists()) {
+        final mainFiles = mainDirectory.listSync();
+        // Filter out the Business directory itself and only include files
+        allFiles.addAll(mainFiles.where((entity) {
+          // Skip directories (including Business subfolder)
+          if (entity is Directory) return false;
+          return true;
+        }));
+      } else {
+        await mainDirectory.create(recursive: true);
+      }
+
+      // Load files from Business subfolder
+      if (await businessDirectory.exists()) {
+        final businessFiles = businessDirectory.listSync();
+        // Only include files, not subdirectories
+        allFiles.addAll(businessFiles.where((entity) => entity is File));
+      }
+
+      // Sort all files by modified date (newest first)
+      allFiles.sort(
+            (a, b) => b.statSync().modified.compareTo(a.statSync().modified),
+      );
+
+      setState(() {
+        savedFiles = allFiles;
+      });
+    } catch (e) {
+      debugPrint("Error loading files: $e");
       setState(() => savedFiles = []);
     }
   }

@@ -59,4 +59,5 @@ flutter {
 
 dependencies {
     implementation("com.android.billingclient:billing:6.0.1")
+    implementation("androidx.documentfile:documentfile:1.1.0")
 }
