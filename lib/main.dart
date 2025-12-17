@@ -11,6 +11,7 @@ import 'package:status_bank/saved_page.dart';
 import 'package:status_bank/setting_page.dart';
 import 'package:status_bank/status_tab_page.dart';
 import 'package:status_bank/status_tab_papge2.dart';
+import 'package:status_bank/subscription_service.dart';
 
 import 'interstitial_ad_service.dart';
 
@@ -270,7 +271,13 @@ Future<void> _checkAndSaveNewStatuses(
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  InterstitialService.loadAd();
+
+  // Only load ads if user is not premium
+  final isPremium = await SubscriptionService.isPremium();
+  if (!isPremium) {
+    InterstitialService.loadAd();
+  }
+
   MobileAds.instance.updateRequestConfiguration(
     RequestConfiguration(
       testDeviceIds: ["09357ABB7CD78370747E779FBA319F0F"],
@@ -330,15 +337,28 @@ class _StatusAppState extends State<StatusApp> {
   Timer? _timer;
   BannerAd? _bannerAd;
   bool _isBannerAdReady = false;
+  bool _isPremium = false;
 
   @override
   void initState() {
     super.initState();
-    _loadBannnerAds();
+    _checkPremiumStatus();
     // Check for new statuses every 10 seconds
     _timer = Timer.periodic(const Duration(seconds: 10), (_) async {
       await checkStatusesForeground();
     });
+  }
+
+  Future<void> _checkPremiumStatus() async {
+    final isPremium = await SubscriptionService.isPremium();
+    setState(() {
+      _isPremium = isPremium;
+    });
+
+    // Only load banner ad if user is not premium
+    if (!_isPremium) {
+      _loadBannnerAds();
+    }
   }
 
   @override
@@ -400,7 +420,8 @@ class _StatusAppState extends State<StatusApp> {
     return Scaffold(
         body: _build(_selectedIndex),
         bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
-          if (_isBannerAdReady && _bannerAd != null)
+          // Only show banner ad if user is not premium
+          if (!_isPremium && _isBannerAdReady && _bannerAd != null)
             Container(
               width: _bannerAd!.size.width.toDouble(),
               height: _bannerAd!.size.height.toDouble(),

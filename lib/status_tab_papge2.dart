@@ -11,6 +11,7 @@ import 'package:status_bank/widget.dart';
 
 import 'full_screen_status.dart';
 import 'interstitial_ad_service.dart';
+import 'subscription_service.dart';
 
 class StatusTabPage2 extends StatefulWidget {
   final String title;
@@ -33,6 +34,7 @@ class _StatusTabPage2State extends State<StatusTabPage2>
   String? savedFolderUri;
   bool isLoading = true; // ✅ Start with loading state
   bool showPermissionScreen = false;
+  bool _isPremium = false; // ✅ Track premium status
 
   // Multi-select variables
   List<String> selectedPaths = [];
@@ -41,8 +43,17 @@ class _StatusTabPage2State extends State<StatusTabPage2>
   @override
   void initState() {
     super.initState();
+    _checkPremiumStatus(); // ✅ Check premium status
     _initializeSaveDirectory();
     _checkInitialState();
+  }
+
+  // ✅ Check if user is premium
+  Future<void> _checkPremiumStatus() async {
+    final isPremium = await SubscriptionService.isPremium();
+    setState(() {
+      _isPremium = isPremium;
+    });
   }
 
   // ✅ Initialize save directory (same as StatusTabPage)
@@ -443,6 +454,7 @@ class _StatusTabPage2State extends State<StatusTabPage2>
             allFilesMetadata: currentFiles,
             initialIndex: index,
             platform: platform,
+            isBusiness: true,
           ),
         ),
       );
@@ -625,7 +637,10 @@ class _StatusTabPage2State extends State<StatusTabPage2>
                     children: [
                       IconButton(
                         onPressed: () {
-                          InterstitialService.show();
+                          // ✅ Only show ad if user is not premium
+                          if (!_isPremium) {
+                            InterstitialService.show();
+                          }
                           saveFile(fileMap);
                         },
                         icon: const Icon(Icons.download, color: Colors.white),
@@ -634,7 +649,10 @@ class _StatusTabPage2State extends State<StatusTabPage2>
                       ),
                       IconButton(
                         onPressed: () async {
-                          InterstitialService.show();
+                          // ✅ Only show ad if user is not premium
+                          if (!_isPremium) {
+                            InterstitialService.show();
+                          }
                           try {
                             final cacheDir = await getTemporaryDirectory();
                             final tempDir = Directory("${cacheDir.path}/share_single_business");

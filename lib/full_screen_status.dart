@@ -8,17 +8,20 @@ import 'package:status_bank/widget.dart';
 import 'package:video_player/video_player.dart';
 
 import 'interstitial_ad_service.dart';
+import 'subscription_service.dart';
 
 class FullScreenStatusOptimized extends StatefulWidget {
   final List<Map<String, dynamic>> allFilesMetadata;
   final int initialIndex;
   final MethodChannel platform;
+  final bool isBusiness; // ✅ Add parameter to distinguish Business WhatsApp
 
   const FullScreenStatusOptimized({
     super.key,
     required this.allFilesMetadata,
     required this.initialIndex,
     required this.platform,
+    this.isBusiness = false, // ✅ Default to false (regular WhatsApp)
   });
 
   @override
@@ -28,6 +31,8 @@ class FullScreenStatusOptimized extends StatefulWidget {
 class _FullScreenStatusOptimizedState extends State<FullScreenStatusOptimized> {
   late PageController _pageController;
   int currentIndex = 0;
+  bool _isPremium = false; // ✅ Track premium status
+  String? _saveDirPath; // ✅ Save directory path
 
   // Cache for loaded files (only loads what's needed)
   final Map<int, String> _loadedFilePaths = {};
@@ -40,10 +45,70 @@ class _FullScreenStatusOptimizedState extends State<FullScreenStatusOptimized> {
     currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: widget.initialIndex);
 
+    _checkPremiumStatus(); // ✅ Check premium status
+    _initializeSaveDirectory(); // ✅ Initialize save directory
+
     // Load only current and adjacent files
     _loadFile(currentIndex);
     _preloadFile(currentIndex - 1);
     _preloadFile(currentIndex + 1);
+  }
+
+  // ✅ Check if user is premium
+  Future<void> _checkPremiumStatus() async {
+    final isPremium = await SubscriptionService.isPremium();
+    setState(() {
+      _isPremium = isPremium;
+    });
+  }
+
+  // ✅ Initialize save directory based on Business or Regular WhatsApp
+  Future<void> _initializeSaveDirectory() async {
+    try {
+      if (Platform.isAndroid) {
+        final androidInfo = await _getAndroidVersion();
+
+        if (androidInfo >= 30) {
+          // Android 10+ (API 29+): Use app-specific external directory
+          final dir = await getExternalStorageDirectory();
+          if (dir != null) {
+            // ✅ Create Business subfolder if isBusiness is true
+            final saveDir = widget.isBusiness
+                ? Directory('${dir.path}/StatusSaver/Business')
+                : Directory('${dir.path}/StatusSaver');
+
+            if (!await saveDir.exists()) {
+              await saveDir.create(recursive: true);
+            }
+            _saveDirPath = saveDir.path;
+            print('📁 Save directory: $_saveDirPath');
+          }
+        } else {
+          // Android 9 and below: Use public directory
+          _saveDirPath = widget.isBusiness
+              ? "/storage/emulated/0/StatusSaver/Business"
+              : "/storage/emulated/0/StatusSaver";
+        }
+      }
+    } catch (e) {
+      print('❌ Error initializing save directory: $e');
+      final dir = await getExternalStorageDirectory();
+      if (dir != null) {
+        _saveDirPath = widget.isBusiness
+            ? '${dir.path}/StatusSaver/Business'
+            : '${dir.path}/StatusSaver';
+      }
+    }
+  }
+
+  // ✅ Get Android version
+  Future<int> _getAndroidVersion() async {
+    try {
+      final version = await widget.platform.invokeMethod('getAndroidVersion');
+      return version as int;
+    } catch (e) {
+      return 30;
+    }
   }
 
   // ✅ Load file on demand from URI
@@ -174,33 +239,67 @@ class _FullScreenStatusOptimizedState extends State<FullScreenStatusOptimized> {
     }
   }
 
+  // ✅ FIXED: saveFile method with proper file existence checking using original filename
   Future<void> saveFile(int index) async {
     if (!_loadedFilePaths.containsKey(index)) {
       showCustomOverlay(context, "File not loaded yet");
       return;
     }
 
-    final file = File(_loadedFilePaths[index]!);
-    final dir = Directory("/storage/emulated/0/StatusSaver");
-
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
-
-    final savedPath = "${dir.path}/${p.basename(file.path)}";
-    final savedFile = File(savedPath);
-
-    if (await savedFile.exists()) {
-      showCustomOverlay(context, "File Already Downloaded");
-      return;
-    }
-
     try {
+      if (_saveDirPath == null) {
+        await _initializeSaveDirectory();
+      }
+
+      if (_saveDirPath == null) {
+        showCustomOverlay(context, "Failed to access storage");
+        return;
+      }
+
+      final file = File(_loadedFilePaths[index]!);
+      final dir = Directory(_saveDirPath!);
+
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+
+      // ✅ FIX: Use the original file name from metadata instead of temp cache name
+      final fileMap = widget.allFilesMetadata[index];
+      final originalFileName = fileMap['name'] as String;
+
+      final savedPath = "${dir.path}/$originalFileName";
+      final savedFile = File(savedPath);
+
+      // ✅ FIX: Check if file already exists with same name and similar size
+      if (await savedFile.exists()) {
+        final existingSize = await savedFile.length();
+        final currentSize = await file.length();
+
+        // If file exists and has similar size (within 1KB difference), it's already saved
+        if ((existingSize - currentSize).abs() < 1024) {
+          showCustomOverlay(context, "File Already Downloaded");
+          return;
+        }
+      }
+
       await file.copy(savedPath);
-      showCustomOverlay(context, "File Saved Successfully");
+
+      // Verify file was saved
+      if (await savedFile.exists()) {
+        final fileSize = await savedFile.length();
+        print('✅ File saved successfully: $savedPath (${fileSize} bytes)');
+
+        // ✅ Show appropriate message based on Business or Regular
+        final message = widget.isBusiness
+            ? "Saved to StatusSaver/Business folder"
+            : "Saved to StatusSaver folder";
+        showCustomOverlay(context, message);
+      } else {
+        showCustomOverlay(context, "Failed to save file");
+      }
     } catch (e) {
-      print('Error saving file: $e');
-      showCustomOverlay(context, "Failed to save file");
+      print('❌ Error saving file: $e');
+      showCustomOverlay(context, "Failed to save: ${e.toString().contains('Operation not permitted') ? 'Storage access denied' : 'Error'}");
     }
   }
 
@@ -289,14 +388,20 @@ class _FullScreenStatusOptimizedState extends State<FullScreenStatusOptimized> {
                     children: [
                       IconButton(
                         onPressed: () async {
-                          InterstitialService.show();
+                          // ✅ Only show ad if user is not premium
+                          if (!_isPremium) {
+                            InterstitialService.show();
+                          }
                           await Share.shareXFiles([XFile(path)]);
                         },
                         icon: const Icon(Icons.share, color: Colors.white),
                       ),
                       IconButton(
                         onPressed: () async {
-                          InterstitialService.show();
+                          // ✅ Only show ad if user is not premium
+                          if (!_isPremium) {
+                            InterstitialService.show();
+                          }
                           await saveFile(index);
                         },
                         icon: const Icon(Icons.download, color: Colors.white),
@@ -338,14 +443,20 @@ class _FullScreenStatusOptimizedState extends State<FullScreenStatusOptimized> {
               children: [
                 IconButton(
                   onPressed: () async {
-                    InterstitialService.show();
+                    // ✅ Only show ad if user is not premium
+                    if (!_isPremium) {
+                      InterstitialService.show();
+                    }
                     await Share.shareXFiles([XFile(path)]);
                   },
                   icon: const Icon(Icons.share, color: Colors.white),
                 ),
                 IconButton(
                   onPressed: () async {
-                    InterstitialService.show();
+                    // ✅ Only show ad if user is not premium
+                    if (!_isPremium) {
+                      InterstitialService.show();
+                    }
                     await saveFile(index);
                   },
                   icon: const Icon(Icons.download, color: Colors.white),
