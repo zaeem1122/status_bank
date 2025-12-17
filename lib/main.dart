@@ -332,7 +332,7 @@ class StatusApp extends StatefulWidget {
   State<StatusApp> createState() => _StatusAppState();
 }
 
-class _StatusAppState extends State<StatusApp> {
+class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
   int _selectedIndex = 0;
   Timer? _timer;
   BannerAd? _bannerAd;
@@ -342,6 +342,7 @@ class _StatusAppState extends State<StatusApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // ✅ Add lifecycle observer
     _checkPremiumStatus();
     // Check for new statuses every 10 seconds
     _timer = Timer.periodic(const Duration(seconds: 10), (_) async {
@@ -349,20 +350,51 @@ class _StatusAppState extends State<StatusApp> {
     });
   }
 
+  // ✅ Monitor app lifecycle to refresh premium status when returning from ProScreen
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // App came back to foreground, check premium status
+      _checkPremiumStatus();
+    }
+  }
+
   Future<void> _checkPremiumStatus() async {
     final isPremium = await SubscriptionService.isPremium();
-    setState(() {
-      _isPremium = isPremium;
-    });
 
-    // Only load banner ad if user is not premium
-    if (!_isPremium) {
-      _loadBannnerAds();
+    // ✅ If premium status changed, update UI and handle ads
+    if (_isPremium != isPremium) {
+      setState(() {
+        _isPremium = isPremium;
+      });
+
+      if (_isPremium) {
+        // ✅ User became premium - dispose banner ad immediately
+        _disposeBannerAd();
+        print('🎉 User is now premium - banner ad removed');
+      } else if (!_isPremium && !_isBannerAdReady) {
+        // User is not premium and ad not loaded - load banner ad
+        _loadBannnerAds();
+      }
+    }
+  }
+
+  // ✅ New method to dispose banner ad
+  void _disposeBannerAd() {
+    if (_bannerAd != null) {
+      _bannerAd!.dispose();
+      _bannerAd = null;
+      setState(() {
+        _isBannerAdReady = false;
+      });
+      print('🗑️ Banner ad disposed');
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // ✅ Remove lifecycle observer
     _timer?.cancel();
     _bannerAd?.dispose();
     super.dispose();

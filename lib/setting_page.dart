@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:status_bank/pro_ad_screen.dart';
 import 'package:status_bank/widget.dart' show showCustomOverlay;
+import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 
 class SettingPage extends StatefulWidget {
   final bool isDarkTheme;
@@ -22,6 +24,11 @@ class SettingPage extends StatefulWidget {
 
 class _SettingPageState extends State<SettingPage> {
   bool autoSave = false;
+  bool _isProcessing = false; // ✅ Prevent multiple clicks during processing
+
+  // ✅ App constants
+  static const String appUrl = 'https://play.google.com/store/apps/details?id=com.appntox.statussavermax';
+  static const String appName = 'Status Saver Max';
 
   @override
   void initState() {
@@ -36,16 +43,109 @@ class _SettingPageState extends State<SettingPage> {
     });
   }
 
+  // ✅ FIXED: Smooth auto-save toggle without lag
   Future<void> _saveAutoSave(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('enabled_auto_save', value);
-    setState(() => autoSave = value);
+    if (_isProcessing) return; // Prevent multiple toggles
 
-    if (value) {
-      await widget.onAutoSaveEnabled();
-      showCustomOverlay(context, "Auto-Save Enabled");
-    } else {
-      showCustomOverlay(context, "Auto-Save Disabled");
+    setState(() {
+      _isProcessing = true;
+      autoSave = value; // ✅ Update UI immediately for smooth toggle
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('enabled_auto_save', value);
+
+      if (value) {
+        // Run auto-save in background without blocking UI
+        widget.onAutoSaveEnabled().then((_) {
+          if (mounted) {
+            showCustomOverlay(context, "Auto-Save Enabled");
+          }
+        });
+      } else {
+        if (mounted) {
+          showCustomOverlay(context, "Auto-Save Disabled");
+        }
+      }
+    } catch (e) {
+      print('Error saving auto-save setting: $e');
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
+    }
+  }
+
+  // ✅ Open Privacy Policy URL
+  Future<void> _openPrivacyPolicy() async {
+    final Uri url = Uri.parse(appUrl);
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          showCustomOverlay(context, "Could not open Privacy Policy");
+        }
+      }
+    } catch (e) {
+      print('Error opening privacy policy: $e');
+      if (mounted) {
+        showCustomOverlay(context, "Error opening link");
+      }
+    }
+  }
+
+  // ✅ Rate the app on Play Store
+  Future<void> _rateApp() async {
+    final Uri url = Uri.parse(appUrl);
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          showCustomOverlay(context, "Could not open Play Store");
+        }
+      }
+    } catch (e) {
+      print('Error opening Play Store: $e');
+      if (mounted) {
+        showCustomOverlay(context, "Error opening Play Store");
+      }
+    }
+  }
+
+  // ✅ Share app with others
+  Future<void> _shareApp() async {
+    try {
+      await Share.share(
+        'Check out $appName - Save WhatsApp statuses easily!\n\n$appUrl',
+        subject: 'Try $appName',
+      );
+    } catch (e) {
+      print('Error sharing app: $e');
+      if (mounted) {
+        showCustomOverlay(context, "Error sharing app");
+      }
+    }
+  }
+
+  // ✅ Open app on Play Store (for Version tap)
+  Future<void> _openPlayStore() async {
+    final Uri url = Uri.parse(appUrl);
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          showCustomOverlay(context, "Could not open Play Store");
+        }
+      }
+    } catch (e) {
+      print('Error opening Play Store: $e');
+      if (mounted) {
+        showCustomOverlay(context, "Error opening Play Store");
+      }
     }
   }
 
@@ -187,6 +287,7 @@ class _SettingPageState extends State<SettingPage> {
               contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
             ),
             const Divider(),
+            // ✅ FIXED: Smooth auto-save toggle
             SwitchListTile(
               title: Text(
                 "Auto Save",
@@ -198,10 +299,11 @@ class _SettingPageState extends State<SettingPage> {
               ),
               activeColor: Colors.teal,
               value: autoSave,
-              onChanged: _saveAutoSave,
+              onChanged: _isProcessing ? null : _saveAutoSave, // ✅ Disable during processing
               contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
             ),
             const Divider(),
+            // ✅ Privacy Policy - Opens Play Store
             ListTile(
               title: Text(
                 "Privacy Policy",
@@ -212,8 +314,11 @@ class _SettingPageState extends State<SettingPage> {
                 style: TextStyle(fontSize: subtitleFontSize),
               ),
               contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
+              onTap: _openPrivacyPolicy, // ✅ Added tap handler
+              trailing: Icon(Icons.open_in_new, color: Colors.teal, size: 20),
             ),
             const Divider(),
+            // ✅ Share With Others - Shares app link
             ListTile(
               title: Text(
                 "Share With Others",
@@ -224,8 +329,11 @@ class _SettingPageState extends State<SettingPage> {
                 style: TextStyle(fontSize: subtitleFontSize),
               ),
               contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
+              onTap: _shareApp, // ✅ Added tap handler
+              trailing: Icon(Icons.share, color: Colors.teal, size: 20),
             ),
             const Divider(),
+            // ✅ Rate Us - Opens Play Store
             ListTile(
               title: Text(
                 "Rate Us",
@@ -236,8 +344,11 @@ class _SettingPageState extends State<SettingPage> {
                 style: TextStyle(fontSize: subtitleFontSize),
               ),
               contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
+              onTap: _rateApp, // ✅ Added tap handler
+              trailing: Icon(Icons.star, color: Colors.amber, size: 20),
             ),
             const Divider(),
+            // ✅ Version - Opens Play Store
             ListTile(
               title: Text(
                 "Version",
@@ -248,6 +359,8 @@ class _SettingPageState extends State<SettingPage> {
                 style: TextStyle(fontSize: subtitleFontSize),
               ),
               contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
+              onTap: _openPlayStore, // ✅ Added tap handler
+              trailing: Icon(Icons.info_outline, color: Colors.teal, size: 20),
             ),
           ],
         ),

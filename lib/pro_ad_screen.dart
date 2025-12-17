@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:status_bank/widget.dart';
 import 'subscription_service.dart';
 
 class ProScreen extends StatefulWidget {
@@ -11,18 +12,53 @@ class ProScreen extends StatefulWidget {
 class _ProScreenState extends State<ProScreen> {
   final SubscriptionService _subService = SubscriptionService();
   bool isLoading = false;
+  bool isPremium = false; // ✅ Track subscription status
 
   @override
   void initState() {
     super.initState();
     _subService.init();
+    _checkPremiumStatus(); // ✅ Check if already subscribed
+  }
+
+  // ✅ Check subscription status
+  Future<void> _checkPremiumStatus() async {
+    final premium = await SubscriptionService.isPremium();
+    setState(() {
+      isPremium = premium;
+    });
   }
 
   Future<void> subscribe() async {
     setState(() => isLoading = true);
     await _subService.buyMonthly();
     await Future.delayed(Duration(seconds: 2));
+    await _checkPremiumStatus(); // ✅ Refresh status after purchase
     setState(() => isLoading = false);
+  }
+
+  // ✅ Restore purchases function
+  Future<void> restorePurchases() async {
+    setState(() => isLoading = true);
+
+    try {
+      await _subService.restorePurchases();
+      await _checkPremiumStatus(); // ✅ Refresh status after restore
+
+      if (mounted) {
+        showCustomOverlay(context,
+            isPremium
+                ? "Subscription restored successfully!"
+                : "No active subscription found"
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showCustomOverlay(context, "Failed to Restore");
+      }
+    } finally {
+      setState(() => isLoading = false);
+    }
   }
 
   @override
@@ -31,7 +67,7 @@ class _ProScreenState extends State<ProScreen> {
       appBar: AppBar(
         leading: IconButton(
           onPressed: () => Navigator.pop(context),
-          icon: Icon(Icons.close),
+          icon: const Icon(Icons.close, color: Colors.white),
         ),
         flexibleSpace: Container(
           decoration: const BoxDecoration(
@@ -47,17 +83,46 @@ class _ProScreenState extends State<ProScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.only(top: 45.0, bottom: 60.0),
+            Padding(
+              padding: const EdgeInsets.only(top: 45.0, bottom: 20.0),
               child: Text(
-                "VIP Subscription",
+                isPremium ? "VIP Member" : "VIP Subscription", // ✅ Change title if subscribed
                 style: TextStyle(
-                  color: Colors.teal,
+                  color: isPremium ? Colors.teal : Colors.teal,
                   fontSize: 30,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ),
+
+            // ✅ Show subscription status badge if premium
+            if (isPremium)
+              Container(
+                margin: const EdgeInsets.only(bottom: 40),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.2),
+                  border: Border.all(color: Colors.green, width: 2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.verified, color: Colors.green, size: 24),
+                    SizedBox(width: 8),
+                    Text(
+                      "Active Subscription",
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              const SizedBox(height: 40),
 
             buildFeature("Status Saver"),
             buildFeature("Remove Ads"),
@@ -65,10 +130,12 @@ class _ProScreenState extends State<ProScreen> {
 
             const Spacer(),
 
-            const Text(
-              "Rs 280.00/Month to Remove Ads",
-              style: TextStyle(fontSize: 14),
-            ),
+            // ✅ Show price only if not subscribed
+            if (!isPremium)
+              const Text(
+                "Rs 280.00/Month to Remove Ads",
+                style: TextStyle(fontSize: 14),
+              ),
 
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 15),
@@ -76,23 +143,43 @@ class _ProScreenState extends State<ProScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal,
+                    backgroundColor: isPremium ? Colors.green : Colors.teal,
                     foregroundColor: Colors.white,
                   ),
-                  onPressed: isLoading ? null : subscribe,
+                  onPressed: isPremium ? null : (isLoading ? null : subscribe), // ✅ Disable if already subscribed
                   child: isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text("START FREE TRIAL"),
+                      : Text(
+                    isPremium ? "SUBSCRIBED ✓" : "START FREE TRIAL", // ✅ Change button text
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             ),
 
+            // ✅ Restore Purchases Button
+            TextButton(
+              onPressed: isLoading ? null : restorePurchases,
+              child: const Text(
+                "Restore Purchases",
+                style: TextStyle(
+                  color: Colors.teal,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
             const Text(
               "You can cancel auto subscription\nanytime from Google Play Store",
               textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
 
-            SizedBox(height: 40),
+            const SizedBox(height: 40),
           ],
         ),
       ),

@@ -37,6 +37,24 @@ class SubscriptionService {
     }
   }
 
+  // ✅ FIXED: Restore Purchases Method using correct API
+  Future<void> restorePurchases() async {
+    try {
+      // Restore previous purchases - this triggers the purchase stream
+      await _iap.restorePurchases();
+
+      // Wait a bit for the purchase stream to process
+      await Future.delayed(const Duration(seconds: 2));
+
+      // The _listenToPurchase callback will handle setting premium status
+      // when restored purchases come through the purchase stream
+
+    } catch (e) {
+      print('Error restoring purchases: $e');
+      throw Exception('Failed to restore purchases');
+    }
+  }
+
   Future<void> _setPremium(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     prefs.setBool("isPremium", value);
