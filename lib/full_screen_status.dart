@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:status_bank/widget.dart';
@@ -81,7 +80,6 @@ class _FullScreenStatusOptimizedState extends State<FullScreenStatusOptimized> {
               await saveDir.create(recursive: true);
             }
             _saveDirPath = saveDir.path;
-            print('📁 Save directory: $_saveDirPath');
           }
         } else {
           // Android 9 and below: Use public directory
@@ -91,7 +89,6 @@ class _FullScreenStatusOptimizedState extends State<FullScreenStatusOptimized> {
         }
       }
     } catch (e) {
-      print('❌ Error initializing save directory: $e');
       final dir = await getExternalStorageDirectory();
       if (dir != null) {
         _saveDirPath = widget.isBusiness

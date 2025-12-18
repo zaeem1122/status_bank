@@ -25,30 +25,31 @@ class _StatusTabPageState extends State<StatusTabPage>
     with SingleTickerProviderStateMixin {
   static const platform = MethodChannel('com.yourapp/status_access');
 
-  // ✅ Use app-specific directory or Downloads folder
   String? _saveDirPath;
 
   List<Map<String, dynamic>> imageFiles = [];
   List<Map<String, dynamic>> videoFiles = [];
 
   String? savedFolderUri;
-  bool isLoading = true; // ✅ Start with loading state
+  bool isLoading = true;
   bool showPermissionScreen = false;
-  bool _isPremium = false; // ✅ Track premium status
+  bool _isPremium = false;
 
   // Multi-select variables
   List<String> selectedPaths = [];
   bool selectionMode = false;
 
+  // ✅ Cache for loaded media to prevent reloading
+  final Map<String, dynamic> _mediaCache = {};
+
   @override
   void initState() {
     super.initState();
-    _checkPremiumStatus(); // ✅ Check premium status
+    _checkPremiumStatus();
     _initializeSaveDirectory();
     _checkInitialState();
   }
 
-  // ✅ Check if user is premium
   Future<void> _checkPremiumStatus() async {
     final isPremium = await SubscriptionService.isPremium();
     setState(() {
@@ -56,18 +57,14 @@ class _StatusTabPageState extends State<StatusTabPage>
     });
   }
 
-  // ✅ Initialize save directory
   Future<void> _initializeSaveDirectory() async {
     try {
       if (Platform.isAndroid) {
         final androidInfo = await _getAndroidVersion();
 
         if (androidInfo >= 30) {
-          // Android 10+ (API 29+): Use app-specific external directory
-          // This doesn't require WRITE_EXTERNAL_STORAGE permission
           final dir = await getExternalStorageDirectory();
           if (dir != null) {
-            // Create StatusSaver folder in app-specific directory
             final saveDir = Directory('${dir.path}/StatusSaver');
             if (!await saveDir.exists()) {
               await saveDir.create(recursive: true);
@@ -76,13 +73,11 @@ class _StatusTabPageState extends State<StatusTabPage>
             print('📁 Save directory: $_saveDirPath');
           }
         } else {
-          // Android 9 and below: Use public directory
           _saveDirPath = "/storage/emulated/0/StatusSaver";
         }
       }
     } catch (e) {
       print('❌ Error initializing save directory: $e');
-      // Fallback to app-specific directory
       final dir = await getExternalStorageDirectory();
       _saveDirPath = dir?.path ?? '';
     }
@@ -97,7 +92,7 @@ class _StatusTabPageState extends State<StatusTabPage>
     } else {
       setState(() {
         showPermissionScreen = true;
-        isLoading = false; // ✅ Stop loading when showing permission screen
+        isLoading = false;
       });
       await _requestStoragePermission();
     }
@@ -215,17 +210,38 @@ class _StatusTabPageState extends State<StatusTabPage>
     }
   }
 
+  // ✅ Cache-aware image loading
   Future<Uint8List?> _loadImageBytes(String uriString) async {
+    // Check cache first
+    if (_mediaCache.containsKey(uriString) && _mediaCache[uriString] is Uint8List) {
+      return _mediaCache[uriString] as Uint8List;
+    }
+
     try {
       final bytes = await platform.invokeMethod('readFileBytes', {'uri': uriString});
-      return bytes as Uint8List?;
+      if (bytes != null) {
+        _mediaCache[uriString] = bytes as Uint8List; // Cache it
+        return bytes as Uint8List;
+      }
+      return null;
     } catch (e) {
       print('Error loading image: $e');
       return null;
     }
   }
 
+  // ✅ Cache-aware video loading
   Future<String?> _getVideoFilePath(String uriString) async {
+    // Check cache first
+    if (_mediaCache.containsKey(uriString) && _mediaCache[uriString] is String) {
+      final cachedPath = _mediaCache[uriString] as String;
+      if (await File(cachedPath).exists()) {
+        return cachedPath;
+      } else {
+        _mediaCache.remove(uriString); // Remove invalid cache
+      }
+    }
+
     try {
       final cacheDir = await getTemporaryDirectory();
       final videoDir = Directory("${cacheDir.path}/video_previews");
@@ -239,12 +255,14 @@ class _StatusTabPageState extends State<StatusTabPage>
       final localFile = File(localPath);
 
       if (await localFile.exists()) {
+        _mediaCache[uriString] = localPath; // Cache it
         return localPath;
       }
 
       final bytes = await platform.invokeMethod('readFileBytes', {'uri': uriString});
       if (bytes != null) {
         await localFile.writeAsBytes(bytes);
+        _mediaCache[uriString] = localPath; // Cache it
         return localPath;
       }
 
@@ -255,7 +273,6 @@ class _StatusTabPageState extends State<StatusTabPage>
     }
   }
 
-  // ✅ Save single file
   Future<void> saveFile(Map<String, dynamic> fileMap) async {
     try {
       if (_saveDirPath == null) {
@@ -295,7 +312,6 @@ class _StatusTabPageState extends State<StatusTabPage>
 
       await savedFile.writeAsBytes(bytes as Uint8List);
 
-      // Verify file was written
       if (await savedFile.exists()) {
         final fileSize = await savedFile.length();
         print('✅ File saved successfully: $savedPath (${fileSize} bytes)');
@@ -328,7 +344,6 @@ class _StatusTabPageState extends State<StatusTabPage>
     });
   }
 
-  // ✅ Download multiple selected files
   Future<void> downloadSelectedFiles() async {
     if (selectedPaths.isEmpty) return;
 
@@ -365,7 +380,6 @@ class _StatusTabPageState extends State<StatusTabPage>
             if (bytes != null) {
               await savedFile.writeAsBytes(bytes as Uint8List);
 
-              // Verify file was saved
               if (await savedFile.exists()) {
                 savedCount++;
                 print('✅ Saved: $fileName');
@@ -386,7 +400,6 @@ class _StatusTabPageState extends State<StatusTabPage>
       selectionMode = false;
       setState(() {});
 
-      // Show appropriate message
       if (savedCount > 0 && alreadyExistCount > 0) {
         showCustomOverlay(context, "$savedCount saved, $alreadyExistCount already existed");
       } else if (savedCount > 0) {
@@ -528,155 +541,60 @@ class _StatusTabPageState extends State<StatusTabPage>
         final uri = fileMap['uri'] as String;
         final isVideo = fileMap['type'].toString().startsWith('video/');
 
+        // ✅ Use unique key for each card to preserve state
         return Card(
+          key: ValueKey(uri),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
           elevation: 4,
-          child: Stack(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(20),
-                  onTap: () {
-                    if (selectionMode) {
-                      toggleSelect(uri);
-                      return;
-                    }
-                    _openFullScreen(index, files);
-                  },
-                  onLongPress: () {
-                    toggleSelect(uri);
-                  },
-                  child: FutureBuilder<dynamic>(
-                    future: isVideo ? _getVideoFilePath(uri) : _loadImageBytes(uri),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return Container(
-                          height: double.infinity,
-                          width: double.infinity,
-                          color: Colors.grey[300],
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.teal),
-                            ),
-                          ),
-                        );
-                      }
+          child: _MediaThumbnail(
+            uri: uri,
+            isVideo: isVideo,
+            isSelected: selectedPaths.contains(uri),
+            selectionMode: selectionMode,
+            isPremium: _isPremium,
+            onTap: () {
+              if (selectionMode) {
+                toggleSelect(uri);
+                return;
+              }
+              _openFullScreen(index, files);
+            },
+            onLongPress: () => toggleSelect(uri),
+            onDownload: () {
+              if (!_isPremium) {
+                InterstitialService.show();
+              }
+              saveFile(fileMap);
+            },
+            onShare: () async {
+              if (!_isPremium) {
+                InterstitialService.show();
+              }
+              try {
+                final cacheDir = await getTemporaryDirectory();
+                final tempDir = Directory("${cacheDir.path}/share_single");
 
-                      if (!snapshot.hasData || snapshot.data == null) {
-                        return Container(
-                          height: double.infinity,
-                          width: double.infinity,
-                          color: Colors.grey[300],
-                          child: Icon(
-                            isVideo ? Icons.videocam_off : Icons.broken_image,
-                            size: 40,
-                            color: Colors.grey[600],
-                          ),
-                        );
-                      }
+                if (!await tempDir.exists()) {
+                  await tempDir.create(recursive: true);
+                }
 
-                      // ✅ Use VideoPreview for videos (same as SavedPage)
-                      if (isVideo) {
-                        return VideoPreview(videoPath: snapshot.data as String);
-                      }
+                final fileName = fileMap['name'] as String;
+                final tempPath = "${tempDir.path}/$fileName";
 
-                      // Use Image.memory for images
-                      return Image.memory(
-                        snapshot.data as Uint8List,
-                        fit: BoxFit.cover,
-                        height: double.infinity,
-                        width: double.infinity,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            color: Colors.grey[300],
-                            child: Icon(
-                              Icons.broken_image,
-                              size: 40,
-                              color: Colors.grey[600],
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ),
-
-              // ===== SELECTION OVERLAY =====
-              if (selectionMode)
-                Positioned(
-                  left: 8,
-                  top: 8,
-                  child: GestureDetector(
-                    onTap: () => toggleSelect(uri),
-                    child: Icon(
-                      selectedPaths.contains(uri)
-                          ? Icons.check_circle
-                          : Icons.circle_outlined,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                  ),
-                ),
-
-              // ===== HIDE PER-ITEM DOWNLOAD/SHARE WHEN SELECTION MODE =====
-              if (!selectionMode)
-                Positioned(
-                  top: 2,
-                  right: 2,
-                  child: Column(
-                    children: [
-                      IconButton(
-                        onPressed: () {
-                          // ✅ Only show ad if user is not premium
-                          if (!_isPremium) {
-                            InterstitialService.show();
-                          }
-                          saveFile(fileMap);
-                        },
-                        icon: const Icon(Icons.download, color: Colors.white),
-                        style: IconButton.styleFrom(
-                            backgroundColor: Colors.black45),
-                      ),
-                      IconButton(
-                        onPressed: () async {
-                          // ✅ Only show ad if user is not premium
-                          if (!_isPremium) {
-                            InterstitialService.show();
-                          }
-                          try {
-                            final cacheDir = await getTemporaryDirectory();
-                            final tempDir = Directory("${cacheDir.path}/share_single");
-
-                            if (!await tempDir.exists()) {
-                              await tempDir.create(recursive: true);
-                            }
-
-                            final fileName = fileMap['name'] as String;
-                            final tempPath = "${tempDir.path}/$fileName";
-
-                            final bytes = await platform.invokeMethod('readFileBytes', {'uri': uri});
-                            if (bytes != null) {
-                              final tempFile = File(tempPath);
-                              await tempFile.writeAsBytes(bytes);
-                              await Share.shareXFiles([XFile(tempPath)]);
-                            }
-                          } catch (e) {
-                            print('Error sharing: $e');
-                          }
-                        },
-                        icon: const Icon(Icons.share, color: Colors.white),
-                        style: IconButton.styleFrom(
-                            backgroundColor: Colors.black45),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
+                final bytes = await platform.invokeMethod('readFileBytes', {'uri': uri});
+                if (bytes != null) {
+                  final tempFile = File(tempPath);
+                  await tempFile.writeAsBytes(bytes);
+                  await Share.shareXFiles([XFile(tempPath)]);
+                }
+              } catch (e) {
+                print('Error sharing: $e');
+              }
+            },
+            loadImageBytes: _loadImageBytes,
+            getVideoFilePath: _getVideoFilePath,
           ),
         );
       },
@@ -805,6 +723,188 @@ class _StatusTabPageState extends State<StatusTabPage>
           buildGrid(videoFiles, false),
         ]),
       ),
+    );
+  }
+}
+
+// ✅ Separate stateful widget for each thumbnail to preserve state independently
+class _MediaThumbnail extends StatefulWidget {
+  final String uri;
+  final bool isVideo;
+  final bool isSelected;
+  final bool selectionMode;
+  final bool isPremium;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final VoidCallback onDownload;
+  final VoidCallback onShare;
+  final Future<Uint8List?> Function(String) loadImageBytes;
+  final Future<String?> Function(String) getVideoFilePath;
+
+  const _MediaThumbnail({
+    required this.uri,
+    required this.isVideo,
+    required this.isSelected,
+    required this.selectionMode,
+    required this.isPremium,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onDownload,
+    required this.onShare,
+    required this.loadImageBytes,
+    required this.getVideoFilePath,
+  });
+
+  @override
+  State<_MediaThumbnail> createState() => _MediaThumbnailState();
+}
+
+class _MediaThumbnailState extends State<_MediaThumbnail> with AutomaticKeepAliveClientMixin {
+  dynamic _cachedData;
+  bool _isLoading = true;
+  bool _hasError = false;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMedia();
+  }
+
+  Future<void> _loadMedia() async {
+    if (_cachedData != null) return; // Already loaded
+
+    try {
+      final data = widget.isVideo
+          ? await widget.getVideoFilePath(widget.uri)
+          : await widget.loadImageBytes(widget.uri);
+
+      if (mounted) {
+        setState(() {
+          _cachedData = data;
+          _isLoading = false;
+          _hasError = data == null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+
+    return Stack(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: widget.onTap,
+            onLongPress: widget.onLongPress,
+            child: _buildMediaContent(),
+          ),
+        ),
+
+        // Selection overlay
+        if (widget.selectionMode)
+          Positioned(
+            left: 8,
+            top: 8,
+            child: GestureDetector(
+              onTap: widget.onTap,
+              child: Icon(
+                widget.isSelected
+                    ? Icons.check_circle
+                    : Icons.circle_outlined,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+          ),
+
+        // Action buttons
+        if (!widget.selectionMode)
+          Positioned(
+            top: 2,
+            right: 2,
+            child: Column(
+              children: [
+                IconButton(
+                  onPressed: widget.onDownload,
+                  icon: const Icon(Icons.download, color: Colors.white),
+                  style: IconButton.styleFrom(
+                      backgroundColor: Colors.black45),
+                ),
+                IconButton(
+                  onPressed: widget.onShare,
+                  icon: const Icon(Icons.share, color: Colors.white),
+                  style: IconButton.styleFrom(
+                      backgroundColor: Colors.black45),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildMediaContent() {
+    if (_isLoading) {
+      return Container(
+        height: double.infinity,
+        width: double.infinity,
+        color: Colors.grey[300],
+        child: Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.teal),
+          ),
+        ),
+      );
+    }
+
+    if (_hasError || _cachedData == null) {
+      return Container(
+        height: double.infinity,
+        width: double.infinity,
+        color: Colors.grey[300],
+        child: Icon(
+          widget.isVideo ? Icons.videocam_off : Icons.broken_image,
+          size: 40,
+          color: Colors.grey[600],
+        ),
+      );
+    }
+
+    if (widget.isVideo) {
+      return VideoPreview(videoPath: _cachedData as String);
+    }
+
+    return Image.memory(
+      _cachedData as Uint8List,
+      fit: BoxFit.cover,
+      height: double.infinity,
+      width: double.infinity,
+      gaplessPlayback: true,
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          color: Colors.grey[300],
+          child: Icon(
+            Icons.broken_image,
+            size: 40,
+            color: Colors.grey[600],
+          ),
+        );
+      },
     );
   }
 }

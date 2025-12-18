@@ -71,29 +71,32 @@ Future<int> _getAndroidVersion() async {
   }
 }
 
-/// Save all existing statuses when auto-save is first enabled
+/// ✅ Save all existing statuses when auto-save is first enabled (NON-BLOCKING)
 Future<void> saveAllExistingStatusesForeground() async {
-  try {
-    final prefs = await SharedPreferences.getInstance();
+  // Run in separate isolate/async to avoid blocking UI
+  Future.microtask(() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
 
-    // Get saved URIs for both WhatsApp types
-    final regularUri = prefs.getString('status_folder_uri');
-    final businessUri = prefs.getString('status_folder_uri_business');
+      // Get saved URIs for both WhatsApp types
+      final regularUri = prefs.getString('status_folder_uri');
+      final businessUri = prefs.getString('status_folder_uri_business');
 
-    // Process regular WhatsApp statuses
-    if (regularUri != null && regularUri.isNotEmpty) {
-      await _processAndSaveStatuses(regularUri, false, prefs);
+      // Process regular WhatsApp statuses
+      if (regularUri != null && regularUri.isNotEmpty) {
+        await _processAndSaveStatuses(regularUri, false, prefs);
+      }
+
+      // Process Business WhatsApp statuses
+      if (businessUri != null && businessUri.isNotEmpty) {
+        await _processAndSaveStatuses(businessUri, true, prefs);
+      }
+
+      print('✅ All existing statuses saved');
+    } catch (e) {
+      print('❌ saveAllExistingStatusesForeground error: $e');
     }
-
-    // Process Business WhatsApp statuses
-    if (businessUri != null && businessUri.isNotEmpty) {
-      await _processAndSaveStatuses(businessUri, true, prefs);
-    }
-
-    print('✅ All existing statuses saved');
-  } catch (e) {
-    print('❌ saveAllExistingStatusesForeground error: $e');
-  }
+  });
 }
 
 /// Process and save statuses from a given URI
@@ -123,32 +126,43 @@ Future<void> _processAndSaveStatuses(
     int savedCount = 0;
     int latestTimestamp = 0;
 
-    for (var file in files) {
-      try {
-        final fileMap = Map<String, dynamic>.from(file);
-        final fileName = fileMap['name'] as String;
-        final fileUri = fileMap['uri'] as String;
-        final lastModified = fileMap['lastModified'] as int;
+    // ✅ Process files in smaller batches to avoid blocking
+    const batchSize = 5;
+    for (int i = 0; i < files.length; i += batchSize) {
+      final batch = files.skip(i).take(batchSize);
 
-        // Track the latest timestamp
-        if (lastModified > latestTimestamp) {
-          latestTimestamp = lastModified;
-        }
+      for (var file in batch) {
+        try {
+          final fileMap = Map<String, dynamic>.from(file);
+          final fileName = fileMap['name'] as String;
+          final fileUri = fileMap['uri'] as String;
+          final lastModified = fileMap['lastModified'] as int;
 
-        // Check if file already exists
-        final destPath = '${targetDir.path}/$fileName';
-        if (await File(destPath).exists()) {
-          continue; // Skip if already saved
-        }
+          // Track the latest timestamp
+          if (lastModified > latestTimestamp) {
+            latestTimestamp = lastModified;
+          }
 
-        // Read file bytes from URI
-        final bytes = await platform.invokeMethod('readFileBytes', {'uri': fileUri});
-        if (bytes != null) {
-          await File(destPath).writeAsBytes(bytes as Uint8List);
-          savedCount++;
+          // Check if file already exists
+          final destPath = '${targetDir.path}/$fileName';
+          if (await File(destPath).exists()) {
+            continue; // Skip if already saved
+          }
+
+          // Read file bytes from URI
+          final bytes = await platform.invokeMethod('readFileBytes', {'uri': fileUri});
+          if (bytes != null) {
+            await File(destPath).writeAsBytes(bytes as Uint8List);
+            savedCount++;
+          }
+        } catch (e) {
+          print('Error saving individual file: $e');
         }
-      } catch (e) {
-        print('Error saving individual file: $e');
+      }
+
+      // ✅ Small delay between batches to prevent blocking
+      if (i + batchSize < files.length) {
+        await Future.delayed(Duration(milliseconds: 50));
       }
     }
 
@@ -342,15 +356,24 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // ✅ Add lifecycle observer
-    _checkPremiumStatus();
+    WidgetsBinding.instance.addObserver(this);
+    _initializeApp();
     // Check for new statuses every 10 seconds
     _timer = Timer.periodic(const Duration(seconds: 10), (_) async {
       await checkStatusesForeground();
     });
   }
 
-  // ✅ Monitor app lifecycle to refresh premium status when returning from ProScreen
+  // ✅ Initialize app and load ads based on premium status
+  Future<void> _initializeApp() async {
+    await _checkPremiumStatus();
+
+    // Load banner ad if user is not premium
+    if (!_isPremium && !_isBannerAdReady) {
+      _loadBannnerAds();
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
@@ -362,25 +385,26 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
 
   Future<void> _checkPremiumStatus() async {
     final isPremium = await SubscriptionService.isPremium();
+    print('🔍 Premium status: $isPremium');
 
-    // ✅ If premium status changed, update UI and handle ads
+    // If premium status changed, update UI and handle ads
     if (_isPremium != isPremium) {
       setState(() {
         _isPremium = isPremium;
       });
 
       if (_isPremium) {
-        // ✅ User became premium - dispose banner ad immediately
+        // User became premium - dispose banner ad immediately
         _disposeBannerAd();
         print('🎉 User is now premium - banner ad removed');
       } else if (!_isPremium && !_isBannerAdReady) {
         // User is not premium and ad not loaded - load banner ad
+        print('📢 User is not premium, loading banner ad...');
         _loadBannnerAds();
       }
     }
   }
 
-  // ✅ New method to dispose banner ad
   void _disposeBannerAd() {
     if (_bannerAd != null) {
       _bannerAd!.dispose();
@@ -394,7 +418,7 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // ✅ Remove lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _bannerAd?.dispose();
     super.dispose();
