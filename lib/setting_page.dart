@@ -355,7 +355,7 @@ class _SettingPageState extends State<SettingPage> {
                 style: TextStyle(fontSize: titleFontSize),
               ),
               subtitle: Text(
-                "Version 2.11.1.10",
+                "Version 1.7.4",
                 style: TextStyle(fontSize: subtitleFontSize),
               ),
               contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),
