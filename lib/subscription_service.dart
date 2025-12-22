@@ -31,37 +31,68 @@ class SubscriptionService {
       if (purchase.productID == "monthly" &&
           purchase.status == PurchaseStatus.purchased) {
 
-        await _setPremium(true);
+        // ✅ Save with expiry date (30 days from now for monthly subscription)
+        final expiryDate = DateTime.now().add(Duration(days: 30));
+        await _setPremiumWithExpiry(true, expiryDate);
         InAppPurchase.instance.completePurchase(purchase);
       }
     }
   }
 
-  // ✅ FIXED: Restore Purchases Method using correct API
+  // ✅ Restore Purchases Method
   Future<void> restorePurchases() async {
     try {
-      // Restore previous purchases - this triggers the purchase stream
       await _iap.restorePurchases();
-
-      // Wait a bit for the purchase stream to process
       await Future.delayed(const Duration(seconds: 2));
-
-      // The _listenToPurchase callback will handle setting premium status
-      // when restored purchases come through the purchase stream
-
     } catch (e) {
       print('Error restoring purchases: $e');
       throw Exception('Failed to restore purchases');
     }
   }
 
-  Future<void> _setPremium(bool value) async {
+  // ✅ Save premium status with expiry date
+  Future<void> _setPremiumWithExpiry(bool value, DateTime expiryDate) async {
     final prefs = await SharedPreferences.getInstance();
     prefs.setBool("isPremium", value);
+    prefs.setString("subscriptionExpiry", expiryDate.toIso8601String());
   }
 
+  // ✅ Check if subscription is still valid
   static Future<bool> isPremium() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool("isPremium") ?? false;
+    final isPremium = prefs.getBool("isPremium") ?? false;
+
+    if (!isPremium) return false;
+
+    // ✅ Check if subscription has expired
+    final expiryString = prefs.getString("subscriptionExpiry");
+    if (expiryString == null) return false;
+
+    final expiryDate = DateTime.parse(expiryString);
+    final now = DateTime.now();
+
+    // ✅ If expired, clear premium status
+    if (now.isAfter(expiryDate)) {
+      await prefs.setBool("isPremium", false);
+      await prefs.remove("subscriptionExpiry");
+      return false;
+    }
+
+    return true;
+  }
+
+  // ✅ Get remaining days of subscription
+  static Future<int?> getRemainingDays() async {
+    final prefs = await SharedPreferences.getInstance();
+    final expiryString = prefs.getString("subscriptionExpiry");
+
+    if (expiryString == null) return null;
+
+    final expiryDate = DateTime.parse(expiryString);
+    final now = DateTime.now();
+
+    if (now.isAfter(expiryDate)) return 0;
+
+    return expiryDate.difference(now).inDays;
   }
 }

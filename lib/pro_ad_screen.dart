@@ -13,28 +13,57 @@ class _ProScreenState extends State<ProScreen> {
   final SubscriptionService _subService = SubscriptionService();
   bool isLoading = false;
   bool isPremium = false; // ✅ Track subscription status
+  String? subscriptionPrice; // ✅ Store actual price from product
 
   @override
   void initState() {
     super.initState();
-    _subService.init();
+    _initializeSubscription();
     _checkPremiumStatus(); // ✅ Check if already subscribed
+  }
+
+  // ✅ Initialize and get product price
+  Future<void> _initializeSubscription() async {
+    await _subService.init();
+    setState(() {
+      subscriptionPrice = _subService.monthlyProduct?.price;
+    });
+    // ✅ Check status again after init (in case subscription expired)
+    await _checkPremiumStatus();
   }
 
   // ✅ Check subscription status
   Future<void> _checkPremiumStatus() async {
     final premium = await SubscriptionService.isPremium();
-    setState(() {
-      isPremium = premium;
-    });
+    if (mounted) {
+      setState(() {
+        isPremium = premium;
+      });
+    }
   }
 
   Future<void> subscribe() async {
     setState(() => isLoading = true);
     await _subService.buyMonthly();
-    await Future.delayed(Duration(seconds: 2));
-    await _checkPremiumStatus(); // ✅ Refresh status after purchase
+
+    // ✅ Poll for premium status change (check every second for up to 15 seconds)
+    bool subscriptionActivated = false;
+    for (int i = 0; i < 15; i++) {
+      await Future.delayed(Duration(seconds: 1));
+      await _checkPremiumStatus();
+
+      if (isPremium) {
+        subscriptionActivated = true;
+        break;
+      }
+    }
+
     setState(() => isLoading = false);
+
+    // ✅ Show success message if premium is now active
+    if (mounted && subscriptionActivated) {
+      showCustomOverlay(context, "Subscription activated successfully!");
+    }
   }
 
   // ✅ Restore purchases function
@@ -130,11 +159,11 @@ class _ProScreenState extends State<ProScreen> {
 
             const Spacer(),
 
-            // ✅ Show price only if not subscribed
-            if (!isPremium)
-              const Text(
-                "Rs 280.00/Month to Remove Ads",
-                style: TextStyle(fontSize: 14),
+            // ✅ Show price only if not subscribed - using actual product price
+            if (!isPremium && subscriptionPrice != null)
+              Text(
+                "$subscriptionPrice/Month to Remove Ads",
+                style: const TextStyle(fontSize: 14),
               ),
 
             Padding(
