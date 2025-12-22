@@ -427,7 +427,7 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
   void _loadBannnerAds() {
     print("📢 Loading Banner Ad...");
     final String AdUnitId = Platform.isAndroid
-        ? "ca-app-pub-3940256099942544/9214589741"
+        ? "ca-app-pub-5697489208417002/9726020583"
         : "ca-app-pub-3940256099942544/2435281174";
     final BannerAd banner = BannerAd(
         size: AdSize.banner,
