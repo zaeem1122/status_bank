@@ -352,23 +352,45 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
   BannerAd? _bannerAd;
   bool _isBannerAdReady = false;
   bool _isPremium = false;
+  StreamSubscription<bool>? _subscriptionListener; // ✅ NEW
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initializeApp();
+
+    // ✅ Listen to subscription changes from background checker
+    _subscriptionListener = SubscriptionService.subscriptionStatusStream.listen((premium) {
+      print('🔔 [main.dart] Subscription status changed: $premium');
+      if (mounted && _isPremium != premium) {
+        setState(() {
+          _isPremium = premium;
+        });
+
+        if (_isPremium) {
+          // User became premium - remove ads
+          _disposeBannerAd();
+          print('🎉 User is now premium - banner ad removed');
+        } else {
+          // User lost premium - show ads
+          if (!_isBannerAdReady) {
+            print('📢 User is not premium, loading banner ad...');
+            _loadBannnerAds();
+          }
+        }
+      }
+    });
+
     // Check for new statuses every 10 seconds
     _timer = Timer.periodic(const Duration(seconds: 10), (_) async {
       await checkStatusesForeground();
     });
   }
 
-  // ✅ Initialize app and load ads based on premium status
   Future<void> _initializeApp() async {
     await _checkPremiumStatus();
 
-    // Load banner ad if user is not premium
     if (!_isPremium && !_isBannerAdReady) {
       _loadBannnerAds();
     }
@@ -378,27 +400,23 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
-      // App came back to foreground, check premium status
       _checkPremiumStatus();
     }
   }
 
   Future<void> _checkPremiumStatus() async {
     final isPremium = await SubscriptionService.isPremium();
-    print('🔍 Premium status: $isPremium');
+    print('🔍 [main.dart] Premium status: $isPremium');
 
-    // If premium status changed, update UI and handle ads
     if (_isPremium != isPremium) {
       setState(() {
         _isPremium = isPremium;
       });
 
       if (_isPremium) {
-        // User became premium - dispose banner ad immediately
         _disposeBannerAd();
         print('🎉 User is now premium - banner ad removed');
       } else if (!_isPremium && !_isBannerAdReady) {
-        // User is not premium and ad not loaded - load banner ad
         print('📢 User is not premium, loading banner ad...');
         _loadBannnerAds();
       }
@@ -420,6 +438,7 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
+    _subscriptionListener?.cancel(); // ✅ NEW: Cancel subscription listener
     _bannerAd?.dispose();
     super.dispose();
   }
@@ -476,7 +495,7 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
     return Scaffold(
         body: _build(_selectedIndex),
         bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
-          // Only show banner ad if user is not premium
+          // ✅ Banner ad appears within 30 seconds after subscription expires
           if (!_isPremium && _isBannerAdReady && _bannerAd != null)
             Container(
               width: _bannerAd!.size.width.toDouble(),

@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:status_bank/pro_ad_screen.dart';
+import 'package:status_bank/subscription_service.dart';
 import 'package:status_bank/widget.dart' show showCustomOverlay;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
@@ -348,6 +349,19 @@ class _SettingPageState extends State<SettingPage> {
               trailing: Icon(Icons.star, color: Colors.amber, size: 20),
             ),
             const Divider(),
+            TextButton(
+              onPressed: () async {
+                // Set expiry to 10 seconds from now
+                await SubscriptionService.setTestExpiry(
+                    DateTime.now().add(Duration(seconds: 10))
+                );
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Test expiry set to 10 seconds'))
+                );
+              },
+              child: Text('Set Test Expiry (10 sec)'),
+            ),
+            const Divider(),
             // ✅ Version - Opens Play Store
             ListTile(
               title: Text(
@@ -355,7 +369,7 @@ class _SettingPageState extends State<SettingPage> {
                 style: TextStyle(fontSize: titleFontSize),
               ),
               subtitle: Text(
-                "Version 1.7.6",
+                "Version 1.7.8",
                 style: TextStyle(fontSize: subtitleFontSize),
               ),
               contentPadding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 16),

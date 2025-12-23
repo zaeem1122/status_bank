@@ -10,6 +10,13 @@ class SubscriptionService {
   // Track purchase completion status
   final _purchaseCompleter = <String, Completer<PurchaseStatus>>{};
 
+  // ✅ NEW: Global stream to notify all screens about subscription changes
+  static final _subscriptionStatusController = StreamController<bool>.broadcast();
+  static Stream<bool> get subscriptionStatusStream => _subscriptionStatusController.stream;
+
+  // ✅ NEW: Background timer for periodic checks (30 seconds)
+  static Timer? _backgroundTimer;
+
   Future<void> init() async {
     final available = await _iap.isAvailable();
     if (!available) return;
@@ -23,20 +30,50 @@ class SubscriptionService {
 
     await _subscription?.cancel();
     _subscription = _iap.purchaseStream.listen(_listenToPurchase);
+
+    // ✅ Start background checking when service initializes
+    startBackgroundChecking();
+  }
+
+  // ✅ NEW: Start background checking (30 seconds interval)
+  static void startBackgroundChecking() {
+    if (_backgroundTimer != null) return;
+
+    print('⏰ [SubscriptionService] Starting background checks every 30 seconds');
+
+    // Check immediately
+    _performBackgroundCheck();
+
+    _backgroundTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _performBackgroundCheck();
+    });
+  }
+
+  static Future<void> _performBackgroundCheck() async {
+    print('🔍 [Background] Checking subscription status...');
+    final isPremium = await SubscriptionService.isPremium();
+    print('🔍 [Background] Status: $isPremium');
+
+    // Notify all listeners
+    _subscriptionStatusController.add(isPremium);
+  }
+
+  // ✅ NEW: Stop background checking
+  static void stopBackgroundChecking() {
+    _backgroundTimer?.cancel();
+    _backgroundTimer = null;
   }
 
   Future<PurchaseStatus?> buyMonthly() async {
     if (monthlyProduct == null) return null;
 
     try {
-      // Create completer for this purchase
       final completer = Completer<PurchaseStatus>();
       _purchaseCompleter['monthly'] = completer;
 
       final purchaseParam = PurchaseParam(productDetails: monthlyProduct!);
       await _iap.buyNonConsumable(purchaseParam: purchaseParam);
 
-      // Wait max 3 seconds for purchase status
       final status = await completer.future.timeout(
         const Duration(seconds: 3),
         onTimeout: () => PurchaseStatus.canceled,
@@ -55,38 +92,41 @@ class SubscriptionService {
     print('📦 [_listenToPurchase] Received ${purchases.length} purchase(s)');
 
     if (purchases.isEmpty) {
-      print('📦 [_listenToPurchase] No purchases in stream - this means no active subscriptions');
+      print('📦 [_listenToPurchase] No purchases in stream');
       return;
     }
 
     for (final purchase in purchases) {
-      print('📦 [_listenToPurchase] Processing purchase: ${purchase.productID}, status: ${purchase.status}');
+      print('📦 [_listenToPurchase] Processing: ${purchase.productID}, status: ${purchase.status}');
 
       if (purchase.productID == "monthly") {
-        // Complete the completer immediately
         if (_purchaseCompleter.containsKey('monthly')) {
           _purchaseCompleter['monthly']!.complete(purchase.status);
         }
 
         if (purchase.status == PurchaseStatus.purchased) {
-          print('📦 [_listenToPurchase] Purchase status: PURCHASED');
-          // ✅ FIX: Get actual expiry from Google Play purchase details
+          print('📦 Purchase status: PURCHASED');
           await _handleActivePurchase(purchase);
+
+          // ✅ Notify all screens about subscription change
+          _subscriptionStatusController.add(true);
 
           if (purchase.pendingCompletePurchase) {
             await InAppPurchase.instance.completePurchase(purchase);
           }
         } else if (purchase.status == PurchaseStatus.restored) {
-          print('📦 [_listenToPurchase] Purchase status: RESTORED');
-          // ✅ FIX: Handle restored purchases with actual expiry data
+          print('📦 Purchase status: RESTORED');
           await _handleActivePurchase(purchase);
+
+          // ✅ Notify all screens
+          _subscriptionStatusController.add(true);
 
           if (purchase.pendingCompletePurchase) {
             await InAppPurchase.instance.completePurchase(purchase);
           }
         } else if (purchase.status == PurchaseStatus.error ||
             purchase.status == PurchaseStatus.canceled) {
-          print('📦 [_listenToPurchase] Purchase status: ERROR or CANCELED');
+          print('📦 Purchase status: ERROR or CANCELED');
           if (purchase.pendingCompletePurchase) {
             await InAppPurchase.instance.completePurchase(purchase);
           }
@@ -95,84 +135,62 @@ class SubscriptionService {
     }
   }
 
-  // ✅ NEW: Handle active purchase with proper expiry detection
   Future<void> _handleActivePurchase(PurchaseDetails purchase) async {
     try {
-      // For Google Play subscriptions, check if auto-renew is enabled
-      // and get the actual expiry timestamp from purchase details
-
-      // Note: For real implementation, you need to verify with Google Play backend
-      // to get accurate expiry and auto-renew status
-
       DateTime expiryDate;
 
-      // Check if we can get expiry from purchase transaction date
       if (purchase.transactionDate != null) {
-        // Add 30 days from transaction date
         final transactionDate = DateTime.fromMillisecondsSinceEpoch(
             int.parse(purchase.transactionDate!)
         );
         expiryDate = transactionDate.add(const Duration(days: 30));
       } else {
-        // Fallback: use current date + 30 days
         expiryDate = DateTime.now().add(const Duration(days: 30));
       }
 
       await _setPremiumWithExpiry(true, expiryDate);
     } catch (e) {
       print('Error handling purchase: $e');
-      // Fallback to 30 days from now
       final expiryDate = DateTime.now().add(const Duration(days: 30));
       await _setPremiumWithExpiry(true, expiryDate);
     }
   }
 
-  // ✅ FIX ISSUE #1: Improved restore with proper verification
   Future<bool> restorePurchases() async {
     try {
       print('🔄 [restorePurchases] Starting restore process...');
 
-      // Step 1: Store current status
       final prefs = await SharedPreferences.getInstance();
       final hadPremium = prefs.getBool("isPremium") ?? false;
-      print('🔄 [restorePurchases] Current local premium status: $hadPremium');
+      print('🔄 Current local premium status: $hadPremium');
 
-      // Step 2: Clear local data to start fresh
       await prefs.remove("isPremium");
       await prefs.remove("subscriptionExpiry");
-      print('🔄 [restorePurchases] Local data cleared, checking with Google Play...');
+      print('🔄 Local data cleared');
 
-      // Step 3: Call restore purchases
       await _iap.restorePurchases();
-
-      // Step 4: Wait for the purchase stream to process
-      // If there are active subscriptions, _listenToPurchase will be called
-      // and will restore the subscription data
       await Future.delayed(const Duration(seconds: 3));
 
-      // Step 5: Check if any subscription was restored by the stream
       final isPremiumAfterRestore = prefs.getBool("isPremium") ?? false;
-      print('🔄 [restorePurchases] After restore - isPremium: $isPremiumAfterRestore');
+      print('🔄 After restore - isPremium: $isPremiumAfterRestore');
 
       if (!isPremiumAfterRestore) {
-        // No active subscription found - the stream either:
-        // 1. Didn't fire (no purchases)
-        // 2. Fired with empty list (no purchases)
-        // 3. Fired but subscription was cancelled
-        print('⚠️ [restorePurchases] No active subscription found in Google Play');
+        print('⚠️ No active subscription found in Google Play');
+        _subscriptionStatusController.add(false);
         return false;
       }
 
-      // Step 6: Double-check expiry is valid
       final isStillValid = await SubscriptionService.isPremium();
-      print('🔄 [restorePurchases] Expiry verification result: $isStillValid');
+      print('🔄 Expiry verification result: $isStillValid');
+
+      _subscriptionStatusController.add(isStillValid);
 
       if (!isStillValid) {
-        print('⚠️ [restorePurchases] Subscription found but expired');
+        print('⚠️ Subscription found but expired');
         return false;
       }
 
-      print('✅ [restorePurchases] Active subscription verified');
+      print('✅ Active subscription verified');
       return true;
     } catch (e) {
       print('❌ [restorePurchases] Error: $e');
@@ -186,26 +204,19 @@ class SubscriptionService {
     await prefs.setString("subscriptionExpiry", expiryDate.toIso8601String());
   }
 
-  // ✅ FIX ISSUE #2: Automatically detect and handle expired/cancelled subscriptions
   static Future<bool> isPremium() async {
     final prefs = await SharedPreferences.getInstance();
     final isPremium = prefs.getBool("isPremium") ?? false;
 
-    print('🔍 [isPremium] Checking subscription status...');
-    print('🔍 [isPremium] Local isPremium flag: $isPremium');
-
     if (!isPremium) {
-      print('🔍 [isPremium] Result: NOT PREMIUM (flag is false)');
       return false;
     }
 
     final expiryString = prefs.getString("subscriptionExpiry");
-    print('🔍 [isPremium] Expiry string: $expiryString');
 
     if (expiryString == null) {
-      // No expiry date means invalid state
-      print('🔍 [isPremium] No expiry date found - clearing premium status');
       await prefs.remove("isPremium");
+      _subscriptionStatusController.add(false);
       return false;
     }
 
@@ -213,26 +224,23 @@ class SubscriptionService {
       final expiryDate = DateTime.parse(expiryString);
       final now = DateTime.now();
 
-      print('🔍 [isPremium] Expiry date: $expiryDate');
-      print('🔍 [isPremium] Current time: $now');
-      print('🔍 [isPremium] Time difference: ${expiryDate.difference(now)}');
-
-      // ✅ If expired or cancelled (expiry in past), clear premium status
       if (now.isAfter(expiryDate)) {
-        print('⚠️ [isPremium] SUBSCRIPTION EXPIRED! Clearing premium status...');
+        print('⚠️ [isPremium] SUBSCRIPTION EXPIRED!');
         await prefs.setBool("isPremium", false);
         await prefs.remove("subscriptionExpiry");
-        print('✅ [isPremium] Result: NOT PREMIUM (expired)');
+
+        // ✅ Notify all screens about expiry
+        _subscriptionStatusController.add(false);
+
         return false;
       }
 
-      print('✅ [isPremium] Result: PREMIUM (valid until $expiryDate)');
       return true;
     } catch (e) {
-      // Invalid date format, clear data
-      print('❌ [isPremium] Error parsing expiry date: $e');
+      print('❌ [isPremium] Error: $e');
       await prefs.remove("isPremium");
       await prefs.remove("subscriptionExpiry");
+      _subscriptionStatusController.add(false);
       return false;
     }
   }
@@ -255,62 +263,43 @@ class SubscriptionService {
     }
   }
 
-  // ✅ FOR TESTING ONLY: Set a custom expiry date to test expiry behavior
-  // Example: await SubscriptionService.setTestExpiry(DateTime.now().add(Duration(seconds: 30)));
   static Future<void> setTestExpiry(DateTime expiryDate) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool("isPremium", true);
     await prefs.setString("subscriptionExpiry", expiryDate.toIso8601String());
-    print('Test expiry set to: $expiryDate');
+    print('⏰ Test expiry set to: $expiryDate');
   }
 
-  // ✅ FOR TESTING: Check current expiry date
   static Future<String?> getExpiryDate() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString("subscriptionExpiry");
   }
 
-  // ✅ NEW: Method to check subscription status from Google Play
-  // This should be called periodically to sync with server
   Future<bool> verifySubscriptionStatus() async {
     try {
       print('🔍 [verifySubscriptionStatus] Checking with Google Play...');
 
-      // Store current status
       final prefs = await SharedPreferences.getInstance();
       final hadPremium = prefs.getBool("isPremium") ?? false;
-      print('🔍 [verifySubscriptionStatus] Local status before check: $hadPremium');
 
-      // Clear local data to force fresh check
       await prefs.remove("isPremium");
       await prefs.remove("subscriptionExpiry");
-      print('🔍 [verifySubscriptionStatus] Local data cleared');
 
-      // Call restore purchases - this will trigger the purchase stream
-      // If there's an active subscription, _listenToPurchase will be called
-      // and will set isPremium = true
-      print('🔍 [verifySubscriptionStatus] Calling restorePurchases...');
       await _iap.restorePurchases();
-
-      // Wait for stream to process purchases
       await Future.delayed(const Duration(seconds: 3));
 
-      // Check if Google Play found any active subscription
       final isPremiumAfterCheck = prefs.getBool("isPremium") ?? false;
-      print('🔍 [verifySubscriptionStatus] Local status after check: $isPremiumAfterCheck');
 
       if (hadPremium && !isPremiumAfterCheck) {
-        print('⚠️ [verifySubscriptionStatus] SUBSCRIPTION WAS CANCELLED/EXPIRED IN GOOGLE PLAY!');
-      } else if (isPremiumAfterCheck) {
-        print('✅ [verifySubscriptionStatus] Active subscription verified');
-      } else {
-        print('ℹ️ [verifySubscriptionStatus] No subscription found');
+        print('⚠️ SUBSCRIPTION WAS CANCELLED/EXPIRED!');
       }
 
-      // Final check with isPremium
       final isValid = await SubscriptionService.isPremium();
-      print('🔍 [verifySubscriptionStatus] Final result: $isValid');
 
+      // ✅ Notify all screens
+      _subscriptionStatusController.add(isValid);
+
+      print('🔍 Final result: $isValid');
       return isValid;
     } catch (e) {
       print('❌ [verifySubscriptionStatus] Error: $e');
@@ -318,16 +307,24 @@ class SubscriptionService {
     }
   }
 
-  // ✅ Clear all subscription data (useful for testing or when subscription ends)
   static Future<void> clearSubscriptionData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove("isPremium");
     await prefs.remove("subscriptionExpiry");
-    print('🗑️ [clearSubscriptionData] All subscription data cleared');
+
+    // ✅ Notify all screens
+    _subscriptionStatusController.add(false);
+
+    print('🗑️ All subscription data cleared');
   }
 
   void dispose() {
     _subscription?.cancel();
     _purchaseCompleter.clear();
+  }
+
+  static void disposeStatic() {
+    stopBackgroundChecking();
+    _subscriptionStatusController.close();
   }
 }

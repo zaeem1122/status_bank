@@ -22,17 +22,20 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // ✅ CRITICAL: Check status IMMEDIATELY when Pro screen opens
+    print('⚡ [ProScreen] Screen opened - performing IMMEDIATE check');
+    _performImmediateCheck();
+
     _initializeSubscription();
 
     print('⏰ [ProScreen] Starting periodic status check timer (every 10 seconds)');
-    // ✅ Check subscription status every 10 seconds
-    // This checks both local expiry AND verifies with Google Play
     int checkCount = 0;
     _statusCheckTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       checkCount++;
-      print('⏰ [ProScreen] Timer tick #$checkCount - checking status');
+      print('⏰ [ProScreen] Timer tick #$checkCount');
 
-      // Check local status every time
+      // Check local status every time (detects expiry instantly)
       _checkPremiumStatus();
 
       // Verify with Google Play every 30 seconds (every 3rd check)
@@ -45,20 +48,32 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    print('👋 [ProScreen] Screen closing');
     _statusCheckTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _subService.dispose();
     super.dispose();
   }
 
-  // ✅ FIX ISSUE #2: Check status when app resumes to detect expiry/cancellation
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _checkPremiumStatus();
-      // Also verify with Google Play to catch cancellations
-      _verifySubscriptionWithServer();
+      print('🔄 [ProScreen] App resumed - checking immediately');
+      _performImmediateCheck();
     }
+  }
+
+  // ✅ CRITICAL: Immediate comprehensive check
+  Future<void> _performImmediateCheck() async {
+    print('⚡ [ProScreen] === IMMEDIATE CHECK STARTED ===');
+
+    // First check local status (detects expiry INSTANTLY)
+    await _checkPremiumStatus();
+
+    // Then verify with Google Play
+    await _verifySubscriptionWithServer();
+
+    print('⚡ [ProScreen] === IMMEDIATE CHECK COMPLETED ===');
   }
 
   Future<void> _initializeSubscription() async {
@@ -68,52 +83,37 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
         subscriptionPrice = _subService.monthlyProduct?.price;
       });
     }
-    await _checkPremiumStatus();
   }
 
-  // ✅ FIX ISSUE #2: Check local premium status (handles expiry automatically)
   Future<void> _checkPremiumStatus() async {
     print('🔄 [ProScreen] Checking premium status...');
     final premium = await SubscriptionService.isPremium();
     print('🔄 [ProScreen] Premium status result: $premium');
 
-    if (mounted) {
+    if (mounted && premium != isPremium) {
+      print('🔄 [ProScreen] ⚠️ STATUS CHANGED! $isPremium → $premium');
       setState(() {
         isPremium = premium;
       });
-      print('🔄 [ProScreen] UI updated - isPremium is now: $isPremium');
-    } else {
-      print('⚠️ [ProScreen] Widget not mounted - skipping UI update');
+      print('🔄 [ProScreen] ✅ UI updated');
     }
   }
 
-  // ✅ NEW: Verify subscription status with Google Play server
-  // This catches cancellations that haven't expired yet
   Future<void> _verifySubscriptionWithServer() async {
     try {
-      print('🌐 [ProScreen] Starting server verification...');
-      print('🌐 [ProScreen] Current isPremium before check: $isPremium');
-
+      print('🌐 [ProScreen] Starting Google Play verification...');
       final isValid = await _subService.verifySubscriptionStatus();
+      print('🌐 [ProScreen] Server result: $isValid');
 
-      print('🌐 [ProScreen] Server verification result: $isValid');
-      print('🌐 [ProScreen] Current isPremium state: $isPremium');
-
-      if (mounted) {
-        if (isValid != isPremium) {
-          print('🌐 [ProScreen] Status changed! Updating UI from $isPremium to $isValid');
-          setState(() {
-            isPremium = isValid;
-          });
-          print('🌐 [ProScreen] UI updated successfully - isPremium is now: $isPremium');
-        } else {
-          print('🌐 [ProScreen] No change in status, UI remains: $isPremium');
-        }
-      } else {
-        print('⚠️ [ProScreen] Widget not mounted, skipping UI update');
+      if (mounted && isValid != isPremium) {
+        print('🌐 [ProScreen] ⚠️ SERVER SAYS DIFFERENT! $isPremium → $isValid');
+        setState(() {
+          isPremium = isValid;
+        });
+        print('🌐 [ProScreen] ✅ UI updated');
       }
     } catch (e) {
-      print('❌ [ProScreen] Error verifying subscription: $e');
+      print('❌ [ProScreen] Error verifying: $e');
     }
   }
 
@@ -147,14 +147,12 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
     }
   }
 
-  // ✅ FIX ISSUE #1: Improved restore with better feedback and verification
   Future<void> restorePurchases() async {
     if (isLoading) return;
 
     setState(() => isLoading = true);
 
     try {
-      // Show loading feedback
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -164,31 +162,22 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
         );
       }
 
-      // Store the status before restore
       final wasPremium = isPremium;
-
-      // Attempt restore (this now clears local data and checks with Google Play)
       final restored = await _subService.restorePurchases();
 
       if (!mounted) return;
 
-      // Update UI with restore results
       await _checkPremiumStatus();
-
       setState(() => isLoading = false);
 
-      // Show appropriate message based on what happened
       if (restored && isPremium) {
-        // Active subscription found and restored
         showCustomOverlay(context, "Subscription restored successfully!");
       } else if (wasPremium && !isPremium) {
-        // Was premium before, but Google Play says no active subscription
         showCustomOverlay(
           context,
           "Subscription cancelled or expired. No active subscription found in Google Play Store.",
         );
       } else {
-        // Never had premium or already cleared
         showCustomOverlay(
           context,
           "No active subscription found. Please subscribe to continue.",
@@ -239,8 +228,7 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
               ),
             ),
 
-            // ✅ FIX ISSUE #2: Shows active badge only when truly subscribed
-            // Automatically disappears when subscription expires or is cancelled
+            // ✅ Shows "Active" badge when subscribed, disappears IMMEDIATELY when expired
             if (isPremium)
               Container(
                 margin: const EdgeInsets.only(bottom: 40),
@@ -275,47 +263,21 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
 
             const Spacer(),
 
-            // ✅ Show remaining days for active subscribers
-            if (isPremium)
-              FutureBuilder<int?>(
-                future: SubscriptionService.getRemainingDays(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasData && snapshot.data != null) {
-                    final days = snapshot.data!;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8.0),
-                      child: Text(
-                        days > 0
-                            ? "$days days remaining"
-                            : "Expires today",
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: days < 3 ? Colors.orange : Colors.grey,
-                          fontWeight: days < 3 ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                    );
-                  }
-                  return const SizedBox.shrink();
-                },
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8.0),
+              child: subscriptionPrice != null
+                  ? Text(
+                "$subscriptionPrice/Month to Remove Ads",
+                style: const TextStyle(fontSize: 14),
+              )
+                  : const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
+            ),
 
-            // ✅ Show price only if not subscribed
-            if (!isPremium)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: subscriptionPrice != null
-                    ? Text(
-                  "$subscriptionPrice/Month to Remove Ads",
-                  style: const TextStyle(fontSize: 14),
-                )
-                    : const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-
+            // ✅ Shows "START FREE TRIAL" immediately when expired
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 15),
               child: SizedBox(
@@ -347,7 +309,6 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
               ),
             ),
 
-            // ✅ FIX ISSUE #1: Restore Purchases Button with improved functionality
             TextButton(
               onPressed: isLoading ? null : restorePurchases,
               child: Text(
@@ -361,30 +322,7 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
               ),
             ),
 
-            // ✅ DEBUG ONLY: Clear subscription data button (REMOVE IN PRODUCTION)
-            if (isPremium)
-              TextButton(
-                onPressed: isLoading
-                    ? null
-                    : () async {
-                  await SubscriptionService.clearSubscriptionData();
-                  await _checkPremiumStatus();
-                  showCustomOverlay(
-                    context,
-                    "Subscription data cleared",
-                  );
-                },
-                child: Text(
-                  "Clear Subscription (Debug Only)",
-                  style: TextStyle(
-                    color: isLoading ? Colors.grey : Colors.red,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-
-            const SizedBox(height: 10),
+            const SizedBox(height: 2),
 
             const Text(
               "You can cancel auto subscription\nanytime from Google Play Store",
@@ -392,7 +330,7 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
 
-            const SizedBox(height: 40),
+            const SizedBox(height: 70),
           ],
         ),
       ),
