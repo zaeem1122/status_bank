@@ -349,19 +349,6 @@ class _SettingPageState extends State<SettingPage> {
               trailing: Icon(Icons.star, color: Colors.amber, size: 20),
             ),
             const Divider(),
-            TextButton(
-              onPressed: () async {
-                // Set expiry to 10 seconds from now
-                await SubscriptionService.setTestExpiry(
-                    DateTime.now().add(Duration(seconds: 10))
-                );
-                ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Test expiry set to 10 seconds'))
-                );
-              },
-              child: Text('Set Test Expiry (10 sec)'),
-            ),
-            const Divider(),
             // ✅ Version - Opens Play Store
             ListTile(
               title: Text(
