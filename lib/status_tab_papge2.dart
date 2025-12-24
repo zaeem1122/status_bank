@@ -517,8 +517,8 @@ class _StatusTabPage2State extends State<StatusTabPage2>
             SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: _loadFilesFromSavedUri,
-              icon: Icon(Icons.refresh),
-              label: Text('Refresh'),
+              icon: Icon(Icons.refresh, color: Colors.white,),
+              label: Text('Refresh', style: TextStyle(color: Colors.white),),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
             ),
           ],

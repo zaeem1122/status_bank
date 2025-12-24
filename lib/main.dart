@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -61,15 +62,15 @@ Future<String> _getSaveDirectory(bool isBusiness) async {
 }
 
 /// Get Android version from platform channel
-Future<int> _getAndroidVersion() async {
-  try {
-    final version = await platform.invokeMethod('getAndroidVersion');
-    return version as int;
-  } catch (e) {
-    print('Error getting Android version: $e');
-    return 30; // Default to Android 11
-  }
-}
+// Future<int> _getAndroidVersion() async {
+//   try {
+//     final version = await platform.invokeMethod('getAndroidVersion');
+//     return version as int;
+//   } catch (e) {
+//     print('Error getting Android version: $e');
+//     return 30; // Default to Android 11
+//   }
+// }
 
 /// ✅ Save all existing statuses when auto-save is first enabled (NON-BLOCKING)
 Future<void> saveAllExistingStatusesForeground() async {
@@ -101,16 +102,21 @@ Future<void> saveAllExistingStatusesForeground() async {
 
 /// Process and save statuses from a given URI
 Future<void> _processAndSaveStatuses(
-    String folderUri, bool isBusiness, SharedPreferences prefs) async {
+  String folderUri,
+  bool isBusiness,
+  SharedPreferences prefs,
+) async {
   try {
     // Get files from the URI using platform channel
-    final List<dynamic> files = await platform.invokeMethod(
-      'getFilesFromUri',
-      {'uri': folderUri, 'isBusiness': isBusiness ? 'true' : 'false'},
-    );
+    final List<dynamic> files = await platform.invokeMethod('getFilesFromUri', {
+      'uri': folderUri,
+      'isBusiness': isBusiness ? 'true' : 'false',
+    });
 
     if (files.isEmpty) {
-      print('No files found in ${isBusiness ? "Business" : "Regular"} WhatsApp');
+      print(
+        'No files found in ${isBusiness ? "Business" : "Regular"} WhatsApp',
+      );
       return;
     }
 
@@ -150,7 +156,9 @@ Future<void> _processAndSaveStatuses(
           }
 
           // Read file bytes from URI
-          final bytes = await platform.invokeMethod('readFileBytes', {'uri': fileUri});
+          final bytes = await platform.invokeMethod('readFileBytes', {
+            'uri': fileUri,
+          });
           if (bytes != null) {
             await File(destPath).writeAsBytes(bytes as Uint8List);
             savedCount++;
@@ -170,7 +178,9 @@ Future<void> _processAndSaveStatuses(
     final key = 'last_seen_${isBusiness ? "business" : "regular"}';
     await prefs.setInt(key, latestTimestamp);
 
-    print('✅ Saved $savedCount files from ${isBusiness ? "Business" : "Regular"} WhatsApp');
+    print(
+      '✅ Saved $savedCount files from ${isBusiness ? "Business" : "Regular"} WhatsApp',
+    );
   } catch (e) {
     print('❌ Error in _processAndSaveStatuses: $e');
   }
@@ -206,13 +216,16 @@ Future<void> checkStatusesForeground() async {
 
 /// Check and save new statuses from a specific URI
 Future<void> _checkAndSaveNewStatuses(
-    String folderUri, bool isBusiness, SharedPreferences prefs) async {
+  String folderUri,
+  bool isBusiness,
+  SharedPreferences prefs,
+) async {
   try {
     // Get current files from URI
-    final List<dynamic> files = await platform.invokeMethod(
-      'getFilesFromUri',
-      {'uri': folderUri, 'isBusiness': isBusiness ? 'true' : 'false'},
-    );
+    final List<dynamic> files = await platform.invokeMethod('getFilesFromUri', {
+      'uri': folderUri,
+      'isBusiness': isBusiness ? 'true' : 'false',
+    });
 
     if (files.isEmpty) return;
 
@@ -259,7 +272,9 @@ Future<void> _checkAndSaveNewStatuses(
         }
 
         // Read and save file
-        final bytes = await platform.invokeMethod('readFileBytes', {'uri': fileUri});
+        final bytes = await platform.invokeMethod('readFileBytes', {
+          'uri': fileUri,
+        });
         if (bytes != null) {
           await File(destPath).writeAsBytes(bytes as Uint8List);
           savedCount++;
@@ -276,7 +291,9 @@ Future<void> _checkAndSaveNewStatuses(
     }
 
     if (savedCount > 0) {
-      print('✅ Auto-saved $savedCount new ${isBusiness ? "Business" : "Regular"} statuses');
+      print(
+        '✅ Auto-saved $savedCount new ${isBusiness ? "Business" : "Regular"} statuses',
+      );
     }
   } catch (e) {
     print('❌ Error in _checkAndSaveNewStatuses: $e');
@@ -293,9 +310,7 @@ Future<void> main() async {
   }
 
   MobileAds.instance.updateRequestConfiguration(
-    RequestConfiguration(
-      testDeviceIds: ["09357ABB7CD78370747E779FBA319F0F"],
-    ),
+    RequestConfiguration(testDeviceIds: ["09357ABB7CD78370747E779FBA319F0F"]),
   );
   await MobileAds.instance.initialize();
 
@@ -307,6 +322,7 @@ Future<void> main() async {
 
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
   @override
   State<MyApp> createState() => _MyAppState();
 }
@@ -326,12 +342,13 @@ class _MyAppState extends State<MyApp> {
       title: 'Status Saver',
       debugShowCheckedModeBanner: false,
       themeMode: _isDarkTheme ? ThemeMode.dark : ThemeMode.light,
-      theme: ThemeData.light()
-          .copyWith(appBarTheme: const AppBarTheme(backgroundColor: Colors.teal)),
-      darkTheme: ThemeData.dark()
-          .copyWith(appBarTheme: const AppBarTheme(backgroundColor: Colors.black)),
-      home:
-      StatusApp(isDarkTheme: _isDarkTheme, onThemeChanged: _toggleTheme),
+      theme: ThemeData.light().copyWith(
+        appBarTheme: const AppBarTheme(backgroundColor: Colors.teal),
+      ),
+      darkTheme: ThemeData.dark().copyWith(
+        appBarTheme: const AppBarTheme(backgroundColor: Colors.black),
+      ),
+      home: StatusApp(isDarkTheme: _isDarkTheme, onThemeChanged: _toggleTheme),
     );
   }
 }
@@ -339,8 +356,12 @@ class _MyAppState extends State<MyApp> {
 class StatusApp extends StatefulWidget {
   final bool isDarkTheme;
   final Function(bool) onThemeChanged;
-  const StatusApp(
-      {super.key, required this.isDarkTheme, required this.onThemeChanged});
+
+  const StatusApp({
+    super.key,
+    required this.isDarkTheme,
+    required this.onThemeChanged,
+  });
 
   @override
   State<StatusApp> createState() => _StatusAppState();
@@ -352,7 +373,8 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
   BannerAd? _bannerAd;
   bool _isBannerAdReady = false;
   bool _isPremium = false;
-  StreamSubscription<bool>? _subscriptionListener; // ✅ NEW
+  StreamSubscription<bool>? _subscriptionListener;
+  final _subService = SubscriptionService();
 
   @override
   void initState() {
@@ -361,26 +383,31 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
     _initializeApp();
 
     // ✅ Listen to subscription changes from background checker
-    _subscriptionListener = SubscriptionService.subscriptionStatusStream.listen((premium) {
-      print('🔔 [main.dart] Subscription status changed: $premium');
-      if (mounted && _isPremium != premium) {
-        setState(() {
-          _isPremium = premium;
-        });
+    _subscriptionListener = SubscriptionService.subscriptionStatusStream.listen(
+      (premium) {
+        print('🔔 [main.dart] Subscription status changed: $premium');
+        if (mounted && _isPremium != premium) {
+          print(
+            '🔔 [main.dart] ⚠️ Status CHANGED from $_isPremium to $premium',
+          );
+          setState(() {
+            _isPremium = premium;
+          });
 
-        if (_isPremium) {
-          // User became premium - remove ads
-          _disposeBannerAd();
-          print('🎉 User is now premium - banner ad removed');
-        } else {
-          // User lost premium - show ads
-          if (!_isBannerAdReady) {
-            print('📢 User is not premium, loading banner ad...');
+          if (_isPremium) {
+            // User became premium - remove ads
+            _disposeBannerAd();
+            print('🎉 User is now premium - banner ad removed');
+          } else {
+            // User lost premium - show ads
+            print('📢 Subscription expired - loading banner ad...');
             _loadBannnerAds();
           }
+        } else {
+          print('🔔 [main.dart] Status unchanged, ignoring');
         }
-      }
-    });
+      },
+    );
 
     // Check for new statuses every 10 seconds
     _timer = Timer.periodic(const Duration(seconds: 10), (_) async {
@@ -408,7 +435,7 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
     final isPremium = await SubscriptionService.isPremium();
     print('🔍 [main.dart] Premium status: $isPremium');
 
-    if (_isPremium != isPremium) {
+    if (mounted && _isPremium != isPremium) {
       setState(() {
         _isPremium = isPremium;
       });
@@ -420,6 +447,27 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
         print('📢 User is not premium, loading banner ad...');
         _loadBannnerAds();
       }
+      await _verifySubscriptionWithServer();
+    }
+  }
+
+  Future<void> _verifySubscriptionWithServer() async {
+    try {
+      print('🌐 [ProScreen] Starting Google Play verification...');
+      final isValid = await _subService.verifySubscriptionStatus();
+      print('🌐 [ProScreen] Server result: $isValid');
+
+      if (mounted && isValid != _isPremium) {
+        print(
+          '🌐 [ProScreen] ⚠️ SERVER SAYS DIFFERENT! $_isPremium → $isValid',
+        );
+        setState(() {
+          _isPremium = isValid;
+        });
+        print('🌐 [ProScreen] ✅ UI updated');
+      }
+    } catch (e) {
+      print('❌ [ProScreen] Error verifying: $e');
     }
   }
 
@@ -438,7 +486,7 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
-    _subscriptionListener?.cancel(); // ✅ NEW: Cancel subscription listener
+    _subscriptionListener?.cancel();
     _bannerAd?.dispose();
     super.dispose();
   }
@@ -449,24 +497,25 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
         ? "ca-app-pub-5697489208417002/9726020583"
         : "ca-app-pub-3940256099942544/2435281174";
     final BannerAd banner = BannerAd(
-        size: AdSize.banner,
-        adUnitId: AdUnitId,
-        listener: BannerAdListener(
-          onAdLoaded: (ad) {
-            print("✅ Banner Ad Loaded Successfully!");
-            setState(() {
-              _bannerAd = ad as BannerAd;
-              _isBannerAdReady = true;
-            });
-          },
-          onAdFailedToLoad: (ad, error) {
-            print("❌ Banner Ad Failed to Load: ${error.message}");
-            ad.dispose();
-          },
-          onAdOpened: (ad) => print("📌 Banner Ad Opened (clicked)."),
-          onAdClosed: (ad) => print("📌 Banner Ad Closed."),
-        ),
-        request: const AdRequest());
+      size: AdSize.banner,
+      adUnitId: AdUnitId,
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          print("✅ Banner Ad Loaded Successfully!");
+          setState(() {
+            _bannerAd = ad as BannerAd;
+            _isBannerAdReady = true;
+          });
+        },
+        onAdFailedToLoad: (ad, error) {
+          print("❌ Banner Ad Failed to Load: ${error.message}");
+          ad.dispose();
+        },
+        onAdOpened: (ad) => print("📌 Banner Ad Opened (clicked)."),
+        onAdClosed: (ad) => print("📌 Banner Ad Closed."),
+      ),
+      request: const AdRequest(),
+    );
     banner.load();
   }
 
@@ -493,8 +542,10 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-        body: _build(_selectedIndex),
-        bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
+      body: _build(_selectedIndex),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
           // ✅ Banner ad appears within 30 seconds after subscription expires
           if (!_isPremium && _isBannerAdReady && _bannerAd != null)
             Container(
@@ -515,12 +566,19 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
             ),
             child: BottomNavigationBar(
               items: const [
-                BottomNavigationBarItem(icon: Icon(Icons.chat), label: "Whatsapp"),
                 BottomNavigationBarItem(
-                    icon: Icon(Icons.business), label: "Business"),
+                  icon: Icon(Icons.chat),
+                  label: "Whatsapp",
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.business),
+                  label: "Business",
+                ),
                 BottomNavigationBarItem(icon: Icon(Icons.save), label: "Saved"),
                 BottomNavigationBarItem(
-                    icon: Icon(Icons.settings), label: "Settings"),
+                  icon: Icon(Icons.settings),
+                  label: "Settings",
+                ),
               ],
               type: BottomNavigationBarType.fixed,
               selectedItemColor: Colors.white,
@@ -530,6 +588,8 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
               onTap: (index) => setState(() => _selectedIndex = index),
             ),
           ),
-        ]));
+        ],
+      ),
+    );
   }
 }

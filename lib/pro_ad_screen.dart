@@ -12,7 +12,7 @@ class ProScreen extends StatefulWidget {
 }
 
 class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
-  final SubscriptionService _subService = SubscriptionService();
+  final _subService = SubscriptionService();
   bool isLoading = false;
   bool isPremium = false;
   String? subscriptionPrice;
