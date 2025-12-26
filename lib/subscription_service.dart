@@ -10,13 +10,13 @@ class SubscriptionService {
   // Track purchase completion status
   final _purchaseCompleter = <String, Completer<PurchaseStatus>>{};
 
-  // ✅ NEW: Global stream to notify all screens about subscription changes
+  // ✅ Global stream to notify all screens about subscription changes
   static final _subscriptionStatusController = StreamController<bool>.broadcast();
   static Stream<bool> get subscriptionStatusStream => _subscriptionStatusController.stream;
 
-  // ✅ NEW: Background timer for periodic checks (10 seconds for testing, 30 for production)
+  // ✅ Background timer for periodic checks
   static Timer? _backgroundTimer;
-  static int _checkCounter = 0; // ✅ Track how many checks we've done
+  static int _checkCounter = 0;
 
   // ✅ Set to true during testing (5-min subscriptions), false for production (30-day subscriptions)
   static const bool isTestMode = true; // Change to false for production
@@ -39,7 +39,7 @@ class SubscriptionService {
     startBackgroundChecking();
   }
 
-  // ✅ NEW: Start background checking (10 seconds in test mode, 30 seconds in production)
+  // ✅ Start background checking
   static void startBackgroundChecking() {
     if (_backgroundTimer != null) return;
 
@@ -54,86 +54,79 @@ class SubscriptionService {
     });
   }
 
+  // 🔥 FIXED: This is the critical method that was causing the issue
   static Future<void> _performBackgroundCheck() async {
     _checkCounter++;
-    print('🔍 [Background] Check #$_checkCounter - Checking subscription status...');
+    print('🔍 [Background] ═══ Check #$_checkCounter START ═══');
 
-    // First check local status
-    final localPremium = await SubscriptionService.isPremium();
-    print('🔍 [Background] Local status: $localPremium');
-
-    // ✅ If not premium, just notify once and return
-    if (!localPremium) {
-      _subscriptionStatusController.add(false);
-      return;
-    }
-
-    // ✅ Only do Play Store verification periodically:
-    // Test mode (5-min subscriptions): Every 3 checks = 30 seconds
-    // Production mode (30-day subscriptions): Every 6 checks = 3 minutes
-    final verifyInterval = isTestMode ? 3 : 6;
-
-    if (_checkCounter % verifyInterval != 0) {
-      print('🔍 [Background] Skipping Play Store check (will check at #${(_checkCounter ~/ verifyInterval + 1) * verifyInterval})');
-      return;
-    }
-
-    print('🔍 [Background] ⏰ Time for Play Store verification!');
-
-    // ✅ Verify with Play Store by clearing and restoring
     try {
-      final prefs = await SharedPreferences.getInstance();
+      // ✅ CRITICAL FIX: Always check isPremium() which validates expiry date
+      final currentPremiumStatus = await SubscriptionService.isPremium();
+      print('🔍 [Background] Current premium status: $currentPremiumStatus');
 
-      // Save original data to restore if verification fails
+      // ✅ ALWAYS emit the current status to ensure listeners are in sync
+      // This fixes the case where expiry is detected but stream isn't emitted
+      print('🔍 [Background] 📡 Emitting status to stream: $currentPremiumStatus');
+      _subscriptionStatusController.add(currentPremiumStatus);
+
+      // If not premium, we're done - no need to verify with Play Store
+      if (!currentPremiumStatus) {
+        print('🔍 [Background] Not premium - skipping Play Store verification');
+        print('🔍 [Background] ═══ Check #$_checkCounter END ═══');
+        return;
+      }
+
+      // ✅ If premium, verify with Play Store periodically
+      // Test mode: Every 3 checks = 30 seconds
+      // Production: Every 6 checks = 3 minutes
+      final verifyInterval = isTestMode ? 3 : 6;
+
+      if (_checkCounter % verifyInterval != 0) {
+        print('🔍 [Background] Premium but skipping Play Store check (will verify at #${(_checkCounter ~/ verifyInterval + 1) * verifyInterval})');
+        print('🔍 [Background] ═══ Check #$_checkCounter END ═══');
+        return;
+      }
+
+      print('🔍 [Background] ⏰ Time for Play Store verification!');
+
+      // Verify with Play Store
+      final prefs = await SharedPreferences.getInstance();
       final originalIsPremium = prefs.getBool("isPremium") ?? false;
       final originalExpiry = prefs.getString("subscriptionExpiry");
-      print('🔍 [Background] Original: isPremium=$originalIsPremium, expiry=$originalExpiry');
 
-      // Don't clear data, just try to restore
-      // If there's an active subscription, it will update the data
-      // If there's no subscription, the data won't be updated
+      print('🔍 [Background] Before restore: isPremium=$originalIsPremium, expiry=$originalExpiry');
 
-      print('🔍 [Background] Calling restorePurchases...');
-
-      // Check with Play Store
+      // Call restore to check with Play Store
       final iap = InAppPurchase.instance;
       await iap.restorePurchases();
 
       // Wait for purchase listener to process
-      // Test mode: 3 seconds (faster detection)
-      // Production: 5 seconds (more reliable for 30-day subs)
       final waitTime = isTestMode ? 3 : 5;
       await Future.delayed(Duration(seconds: waitTime));
 
-      // Check result
-      final afterIsPremium = prefs.getBool("isPremium") ?? false;
+      // Check final status after restore
+      final finalPremiumStatus = await SubscriptionService.isPremium();
       final afterExpiry = prefs.getString("subscriptionExpiry");
 
-      print('🔍 [Background] After restore: isPremium=$afterIsPremium, expiry=$afterExpiry');
+      print('🔍 [Background] After restore: isPremium=$finalPremiumStatus, expiry=$afterExpiry');
 
-      // ✅ Only notify if there was a premium status and now there isn't
-      // This prevents false positives from slow network/restore
-      if (originalIsPremium && !afterIsPremium) {
-        // Double-check by verifying expiry date
-        final isStillValid = await SubscriptionService.isPremium();
-        if (!isStillValid) {
-          print('🔍 [Background] ⚠️ SUBSCRIPTION EXPIRED! Notifying listeners...');
-          _subscriptionStatusController.add(false);
-        } else {
-          print('🔍 [Background] ✅ Subscription still valid via expiry check');
-        }
-      } else if (afterIsPremium) {
-        print('🔍 [Background] ✅ Subscription still active');
+      // ✅ CRITICAL: Emit the final status regardless of what it is
+      if (originalIsPremium != finalPremiumStatus) {
+        print('🔍 [Background] ⚠️ STATUS CHANGED: $originalIsPremium → $finalPremiumStatus');
+        print('🔍 [Background] 📡 Emitting changed status: $finalPremiumStatus');
+        _subscriptionStatusController.add(finalPremiumStatus);
       } else {
-        print('🔍 [Background] ℹ️ Was not premium before, still not premium');
+        print('🔍 [Background] ✅ Status unchanged: $finalPremiumStatus');
       }
+
+      print('🔍 [Background] ═══ Check #$_checkCounter END ═══');
     } catch (e) {
-      print('❌ [Background] Error checking with Play Store: $e');
-      // On error, don't change anything - keep existing status
+      print('❌ [Background] Error in check #$_checkCounter: $e');
+      print('🔍 [Background] ═══ Check #$_checkCounter END (ERROR) ═══');
     }
   }
 
-  // ✅ NEW: Stop background checking
+  // ✅ Stop background checking
   static void stopBackgroundChecking() {
     _backgroundTimer?.cancel();
     _backgroundTimer = null;
@@ -205,24 +198,42 @@ class SubscriptionService {
     }
   }
 
+  // 🔥 FIXED: Use correct duration based on test mode
   Future<void> _handleActivePurchase(PurchaseDetails purchase) async {
     try {
       DateTime expiryDate;
+
+      // ✅ Test mode: 5 minutes | Production: 30 days
+      final subscriptionDuration = isTestMode
+          ? const Duration(minutes: 5)
+          : const Duration(days: 30);
+
+      print('📦 [_handleActivePurchase] Using duration: ${isTestMode ? "5 minutes (TEST)" : "30 days (PRODUCTION)"}');
 
       if (purchase.transactionDate != null) {
         final transactionDate = DateTime.fromMillisecondsSinceEpoch(
             int.parse(purchase.transactionDate!)
         );
-        expiryDate = transactionDate.add(const Duration(days: 30));
+        expiryDate = transactionDate.add(subscriptionDuration);
+        print('📦 [_handleActivePurchase] Transaction date: $transactionDate');
       } else {
-        expiryDate = DateTime.now().add(const Duration(days: 30));
+        expiryDate = DateTime.now().add(subscriptionDuration);
+        print('📦 [_handleActivePurchase] No transaction date, using current time');
       }
 
+      print('📦 [_handleActivePurchase] Setting expiry to: $expiryDate');
       await _setPremiumWithExpiry(true, expiryDate);
+
+      print('✅ [_handleActivePurchase] Subscription active until: $expiryDate');
     } catch (e) {
-      print('Error handling purchase: $e');
-      final expiryDate = DateTime.now().add(const Duration(days: 30));
+      print('❌ [_handleActivePurchase] Error: $e');
+      // Fallback with correct duration
+      final subscriptionDuration = isTestMode
+          ? const Duration(minutes: 5)
+          : const Duration(days: 30);
+      final expiryDate = DateTime.now().add(subscriptionDuration);
       await _setPremiumWithExpiry(true, expiryDate);
+      print('⚠️ [_handleActivePurchase] Used fallback expiry: $expiryDate');
     }
   }
 
@@ -274,6 +285,7 @@ class SubscriptionService {
     await prefs.setString("subscriptionExpiry", expiryDate.toIso8601String());
   }
 
+  // 🔥 CRITICAL METHOD: This detects expiry by checking the date
   static Future<bool> isPremium() async {
     final prefs = await SharedPreferences.getInstance();
     final isPremium = prefs.getBool("isPremium") ?? false;
@@ -296,6 +308,7 @@ class SubscriptionService {
 
       if (now.isAfter(expiryDate)) {
         print('⚠️ [isPremium] SUBSCRIPTION EXPIRED!');
+        print('⚠️ [isPremium] Expiry: $expiryDate, Now: $now');
         await prefs.setBool("isPremium", false);
         await prefs.remove("subscriptionExpiry");
 

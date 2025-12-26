@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:status_bank/widget.dart';
-import 'subscription_service.dart';
+import 'package:status_bank/subscription_service.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'dart:async';
 
@@ -16,40 +16,40 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
   bool isLoading = false;
   bool isPremium = false;
   String? subscriptionPrice;
-  Timer? _statusCheckTimer;
+  StreamSubscription<bool>? _subscriptionListener;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // ✅ CRITICAL: Check status IMMEDIATELY when Pro screen opens
-    print('⚡ [ProScreen] Screen opened - performing IMMEDIATE check');
-    _performImmediateCheck();
+    print('⚡ [ProScreen] Screen opened');
 
+    // Check initial premium status
+    _checkPremiumStatus();
+
+    // Initialize subscription service
     _initializeSubscription();
 
-    print('⏰ [ProScreen] Starting periodic status check timer (every 10 seconds)');
-    int checkCount = 0;
-    _statusCheckTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      checkCount++;
-      print('⏰ [ProScreen] Timer tick #$checkCount');
-
-      // Check local status every time (detects expiry instantly)
-      _checkPremiumStatus();
-
-      // Verify with Google Play every 30 seconds (every 3rd check)
-      if (checkCount % 3 == 0) {
-        print('🔍 [ProScreen] Verifying with Google Play...');
-        _verifySubscriptionWithServer();
-      }
-    });
+    // ✅ Listen to subscription changes from SubscriptionService
+    // This ensures UI updates immediately when subscription changes
+    _subscriptionListener = SubscriptionService.subscriptionStatusStream.listen(
+          (premium) {
+        print('🔔 [ProScreen] Subscription status changed: $premium');
+        if (mounted && isPremium != premium) {
+          setState(() {
+            isPremium = premium;
+          });
+          print('✅ [ProScreen] UI updated to reflect new status');
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
     print('👋 [ProScreen] Screen closing');
-    _statusCheckTimer?.cancel();
+    _subscriptionListener?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _subService.dispose();
     super.dispose();
@@ -58,22 +58,9 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      print('🔄 [ProScreen] App resumed - checking immediately');
-      _performImmediateCheck();
+      print('🔄 [ProScreen] App resumed - checking status');
+      _checkPremiumStatus();
     }
-  }
-
-  // ✅ CRITICAL: Immediate comprehensive check
-  Future<void> _performImmediateCheck() async {
-    print('⚡ [ProScreen] === IMMEDIATE CHECK STARTED ===');
-
-    // First check local status (detects expiry INSTANTLY)
-    await _checkPremiumStatus();
-
-    // Then verify with Google Play
-    await _verifySubscriptionWithServer();
-
-    print('⚡ [ProScreen] === IMMEDIATE CHECK COMPLETED ===');
   }
 
   Future<void> _initializeSubscription() async {
@@ -88,32 +75,13 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
   Future<void> _checkPremiumStatus() async {
     print('🔄 [ProScreen] Checking premium status...');
     final premium = await SubscriptionService.isPremium();
-    print('🔄 [ProScreen] Premium status result: $premium');
+    print('🔄 [ProScreen] Premium status: $premium');
 
     if (mounted && premium != isPremium) {
-      print('🔄 [ProScreen] ⚠️ STATUS CHANGED! $isPremium → $premium');
+      print('🔄 [ProScreen] Status changed: $isPremium → $premium');
       setState(() {
         isPremium = premium;
       });
-      print('🔄 [ProScreen] ✅ UI updated');
-    }
-  }
-
-  Future<void> _verifySubscriptionWithServer() async {
-    try {
-      print('🌐 [ProScreen] Starting Google Play verification...');
-      final isValid = await _subService.verifySubscriptionStatus();
-      print('🌐 [ProScreen] Server result: $isValid');
-
-      if (mounted && isValid != isPremium) {
-        print('🌐 [ProScreen] ⚠️ SERVER SAYS DIFFERENT! $isPremium → $isValid');
-        setState(() {
-          isPremium = isValid;
-        });
-        print('🌐 [ProScreen] ✅ UI updated');
-      }
-    } catch (e) {
-      print('❌ [ProScreen] Error verifying: $e');
     }
   }
 
@@ -130,7 +98,7 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
       setState(() => isLoading = false);
 
       if (status == PurchaseStatus.purchased) {
-        await _checkPremiumStatus();
+        // ✅ No need to manually check - subscription stream will update automatically
         showCustomOverlay(context, "Subscription activated successfully!");
       } else if (status == PurchaseStatus.pending) {
         showCustomOverlay(context, "Purchase pending. Please check back later.");
@@ -140,6 +108,7 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
         showCustomOverlay(context, "Purchase failed. Please try again.");
       }
     } catch (e) {
+      print('❌ [ProScreen] Purchase error: $e');
       if (mounted) {
         setState(() => isLoading = false);
         showCustomOverlay(context, "Something went wrong. Please try again.");
@@ -167,8 +136,10 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
 
       if (!mounted) return;
 
-      await _checkPremiumStatus();
       setState(() => isLoading = false);
+
+      // ✅ Wait a moment for the subscription stream to update
+      await Future.delayed(const Duration(milliseconds: 500));
 
       if (restored && isPremium) {
         showCustomOverlay(context, "Subscription restored successfully!");
@@ -184,6 +155,7 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
         );
       }
     } catch (e) {
+      print('❌ [ProScreen] Restore error: $e');
       if (mounted) {
         setState(() => isLoading = false);
         showCustomOverlay(
@@ -228,7 +200,8 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
               ),
             ),
 
-            // ✅ Shows "Active" badge when subscribed, disappears IMMEDIATELY when expired
+            // ✅ Shows "Active" badge when subscribed
+            // Will disappear automatically via subscription stream
             if (isPremium)
               Container(
                 margin: const EdgeInsets.only(bottom: 40),
@@ -277,7 +250,7 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
               ),
             ),
 
-            // ✅ Shows "START FREE TRIAL" immediately when expired
+            // ✅ Button updates automatically via subscription stream
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 15),
               child: SizedBox(

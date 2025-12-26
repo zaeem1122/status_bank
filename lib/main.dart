@@ -13,6 +13,7 @@ import 'package:status_bank/setting_page.dart';
 import 'package:status_bank/status_tab_page.dart';
 import 'package:status_bank/status_tab_papge2.dart';
 import 'package:status_bank/subscription_service.dart';
+import 'package:status_bank/ads_controller.dart'; // 🔥 NEW IMPORT
 
 import 'interstitial_ad_service.dart';
 
@@ -61,17 +62,6 @@ Future<String> _getSaveDirectory(bool isBusiness) async {
   }
 }
 
-/// Get Android version from platform channel
-// Future<int> _getAndroidVersion() async {
-//   try {
-//     final version = await platform.invokeMethod('getAndroidVersion');
-//     return version as int;
-//   } catch (e) {
-//     print('Error getting Android version: $e');
-//     return 30; // Default to Android 11
-//   }
-// }
-
 /// ✅ Save all existing statuses when auto-save is first enabled (NON-BLOCKING)
 Future<void> saveAllExistingStatusesForeground() async {
   // Run in separate isolate/async to avoid blocking UI
@@ -100,12 +90,12 @@ Future<void> saveAllExistingStatusesForeground() async {
   });
 }
 
-/// Process and save statuses from a given URI
+/// Process and save statuses from a given URI - NOW SAVES TO GALLERY
 Future<void> _processAndSaveStatuses(
-  String folderUri,
-  bool isBusiness,
-  SharedPreferences prefs,
-) async {
+    String folderUri,
+    bool isBusiness,
+    SharedPreferences prefs,
+    ) async {
   try {
     // Get files from the URI using platform channel
     final List<dynamic> files = await platform.invokeMethod('getFilesFromUri', {
@@ -120,16 +110,8 @@ Future<void> _processAndSaveStatuses(
       return;
     }
 
-    // Get the appropriate save directory
-    final targetPath = await _getSaveDirectory(isBusiness);
-    final targetDir = Directory(targetPath);
-
-    if (!await targetDir.exists()) {
-      await targetDir.create(recursive: true);
-      print('Created directory: $targetPath');
-    }
-
     int savedCount = 0;
+    int alreadyExistCount = 0;
     int latestTimestamp = 0;
 
     // ✅ Process files in smaller batches to avoid blocking
@@ -143,15 +125,22 @@ Future<void> _processAndSaveStatuses(
           final fileName = fileMap['name'] as String;
           final fileUri = fileMap['uri'] as String;
           final lastModified = fileMap['lastModified'] as int;
+          final fileType = fileMap['type'] as String;
+          final isVideo = fileType.startsWith('video/');
 
           // Track the latest timestamp
           if (lastModified > latestTimestamp) {
             latestTimestamp = lastModified;
           }
 
-          // Check if file already exists
-          final destPath = '${targetDir.path}/$fileName';
-          if (await File(destPath).exists()) {
+          // 🆕 Check if file already exists in gallery
+          final alreadyExists = await platform.invokeMethod('checkFileExistsInGallery', {
+            'fileName': fileName,
+            'isVideo': isVideo,
+          });
+
+          if (alreadyExists == true) {
+            alreadyExistCount++;
             continue; // Skip if already saved
           }
 
@@ -159,9 +148,18 @@ Future<void> _processAndSaveStatuses(
           final bytes = await platform.invokeMethod('readFileBytes', {
             'uri': fileUri,
           });
+
           if (bytes != null) {
-            await File(destPath).writeAsBytes(bytes as Uint8List);
-            savedCount++;
+            // 🆕 Save to gallery using MediaStore
+            final success = await platform.invokeMethod('saveToGallery', {
+              'bytes': bytes,
+              'fileName': fileName,
+              'isVideo': isVideo,
+            });
+
+            if (success == true) {
+              savedCount++;
+            }
           }
         } catch (e) {
           print('Error saving individual file: $e');
@@ -179,7 +177,7 @@ Future<void> _processAndSaveStatuses(
     await prefs.setInt(key, latestTimestamp);
 
     print(
-      '✅ Saved $savedCount files from ${isBusiness ? "Business" : "Regular"} WhatsApp',
+      '✅ Auto-save: Saved $savedCount files from ${isBusiness ? "Business" : "Regular"} WhatsApp${alreadyExistCount > 0 ? " ($alreadyExistCount already existed)" : ""}',
     );
   } catch (e) {
     print('❌ Error in _processAndSaveStatuses: $e');
@@ -214,12 +212,12 @@ Future<void> checkStatusesForeground() async {
   }
 }
 
-/// Check and save new statuses from a specific URI
+/// Check and save new statuses from a specific URI - NOW SAVES TO GALLERY
 Future<void> _checkAndSaveNewStatuses(
-  String folderUri,
-  bool isBusiness,
-  SharedPreferences prefs,
-) async {
+    String folderUri,
+    bool isBusiness,
+    SharedPreferences prefs,
+    ) async {
   try {
     // Get current files from URI
     final List<dynamic> files = await platform.invokeMethod('getFilesFromUri', {
@@ -242,15 +240,8 @@ Future<void> _checkAndSaveNewStatuses(
 
     if (newFiles.isEmpty) return;
 
-    // Get save directory
-    final targetPath = await _getSaveDirectory(isBusiness);
-    final targetDir = Directory(targetPath);
-
-    if (!await targetDir.exists()) {
-      await targetDir.create(recursive: true);
-    }
-
     int savedCount = 0;
+    int alreadyExistCount = 0;
     int latestTimestamp = lastSeen;
 
     for (var file in newFiles) {
@@ -259,15 +250,22 @@ Future<void> _checkAndSaveNewStatuses(
         final fileName = fileMap['name'] as String;
         final fileUri = fileMap['uri'] as String;
         final lastModified = fileMap['lastModified'] as int;
+        final fileType = fileMap['type'] as String;
+        final isVideo = fileType.startsWith('video/');
 
         // Track latest timestamp
         if (lastModified > latestTimestamp) {
           latestTimestamp = lastModified;
         }
 
-        // Check if file already exists
-        final destPath = '${targetDir.path}/$fileName';
-        if (await File(destPath).exists()) {
+        // 🆕 Check if file already exists in gallery
+        final alreadyExists = await platform.invokeMethod('checkFileExistsInGallery', {
+          'fileName': fileName,
+          'isVideo': isVideo,
+        });
+
+        if (alreadyExists == true) {
+          alreadyExistCount++;
           continue;
         }
 
@@ -275,10 +273,19 @@ Future<void> _checkAndSaveNewStatuses(
         final bytes = await platform.invokeMethod('readFileBytes', {
           'uri': fileUri,
         });
+
         if (bytes != null) {
-          await File(destPath).writeAsBytes(bytes as Uint8List);
-          savedCount++;
-          print('📥 Auto-saved: $fileName');
+          // 🆕 Save to gallery using MediaStore
+          final success = await platform.invokeMethod('saveToGallery', {
+            'bytes': bytes,
+            'fileName': fileName,
+            'isVideo': isVideo,
+          });
+
+          if (success == true) {
+            savedCount++;
+            print('📥 Auto-saved to Gallery: $fileName');
+          }
         }
       } catch (e) {
         print('Error auto-saving file: $e');
@@ -290,9 +297,9 @@ Future<void> _checkAndSaveNewStatuses(
       await prefs.setInt(key, latestTimestamp);
     }
 
-    if (savedCount > 0) {
+    if (savedCount > 0 || alreadyExistCount > 0) {
       print(
-        '✅ Auto-saved $savedCount new ${isBusiness ? "Business" : "Regular"} statuses',
+        '✅ Auto-saved $savedCount new ${isBusiness ? "Business" : "Regular"} statuses to Gallery${alreadyExistCount > 0 ? " ($alreadyExistCount already existed)" : ""}',
       );
     }
   } catch (e) {
@@ -303,19 +310,38 @@ Future<void> _checkAndSaveNewStatuses(
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Only load ads if user is not premium
-  final isPremium = await SubscriptionService.isPremium();
-  if (!isPremium) {
-    InterstitialService.loadAd();
-  }
+  print('🚀 [main] App starting...');
 
+  // Initialize Mobile Ads first
   MobileAds.instance.updateRequestConfiguration(
     RequestConfiguration(testDeviceIds: ["09357ABB7CD78370747E779FBA319F0F"]),
   );
   await MobileAds.instance.initialize();
+  print('✅ [main] Mobile Ads initialized');
 
+  // Initialize Subscription Service
+  final subService = SubscriptionService();
+  await subService.init();
+  print('✅ [main] Subscription Service initialized');
+
+  // 🔥 Initialize Global Ads Controller AFTER subscription service
+  // This ensures the subscription stream is ready before ads controller subscribes
+  await AdsController.instance.init();
+  print('✅ [main] Ads Controller initialized');
+
+  // Load interstitial ad only if not premium
+  final isPremium = await SubscriptionService.isPremium();
+  if (!isPremium) {
+    InterstitialService.loadAd();
+    print('📢 [main] Loading interstitial ad (user is not premium)');
+  } else {
+    print('🎉 [main] User is premium, skipping interstitial ad');
+  }
+
+  // Request permissions
   await Permission.storage.request();
   await Permission.manageExternalStorage.request();
+  print('✅ [main] Permissions requested');
 
   runApp(const MyApp());
 }
@@ -342,13 +368,25 @@ class _MyAppState extends State<MyApp> {
       title: 'Status Saver',
       debugShowCheckedModeBanner: false,
       themeMode: _isDarkTheme ? ThemeMode.dark : ThemeMode.light,
+
       theme: ThemeData.light().copyWith(
-        appBarTheme: const AppBarTheme(backgroundColor: Colors.teal),
+        scaffoldBackgroundColor: Colors.white,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.teal,
+        ),
       ),
+
       darkTheme: ThemeData.dark().copyWith(
-        appBarTheme: const AppBarTheme(backgroundColor: Colors.black),
+        scaffoldBackgroundColor: const Color(0xFF121212),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.black,
+        ),
       ),
-      home: StatusApp(isDarkTheme: _isDarkTheme, onThemeChanged: _toggleTheme),
+
+      home: StatusApp(
+        isDarkTheme: _isDarkTheme,
+        onThemeChanged: _toggleTheme,
+      ),
     );
   }
 }
@@ -369,154 +407,27 @@ class StatusApp extends StatefulWidget {
 
 class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
   int _selectedIndex = 0;
-  Timer? _timer;
-  BannerAd? _bannerAd;
-  bool _isBannerAdReady = false;
-  bool _isPremium = false;
-  StreamSubscription<bool>? _subscriptionListener;
-  final _subService = SubscriptionService();
+  Timer? _statusCheckTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initializeApp();
-
-    // ✅ Listen to subscription changes from background checker
-    _subscriptionListener = SubscriptionService.subscriptionStatusStream.listen(
-      (premium) {
-        print('🔔 [main.dart] Subscription status changed: $premium');
-        if (mounted && _isPremium != premium) {
-          print(
-            '🔔 [main.dart] ⚠️ Status CHANGED from $_isPremium to $premium',
-          );
-          setState(() {
-            _isPremium = premium;
-          });
-
-          if (_isPremium) {
-            // User became premium - remove ads
-            _disposeBannerAd();
-            print('🎉 User is now premium - banner ad removed');
-          } else {
-            // User lost premium - show ads
-            print('📢 Subscription expired - loading banner ad...');
-            _loadBannnerAds();
-          }
-        } else {
-          print('🔔 [main.dart] Status unchanged, ignoring');
-        }
-      },
-    );
 
     // Check for new statuses every 10 seconds
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) async {
+    _statusCheckTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       await checkStatusesForeground();
     });
-  }
 
-  Future<void> _initializeApp() async {
-    await _checkPremiumStatus();
-
-    if (!_isPremium && !_isBannerAdReady) {
-      _loadBannnerAds();
-    }
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-    if (state == AppLifecycleState.resumed) {
-      _checkPremiumStatus();
-    }
-  }
-
-  Future<void> _checkPremiumStatus() async {
-    final isPremium = await SubscriptionService.isPremium();
-    print('🔍 [main.dart] Premium status: $isPremium');
-
-    if (mounted && _isPremium != isPremium) {
-      setState(() {
-        _isPremium = isPremium;
-      });
-
-      if (_isPremium) {
-        _disposeBannerAd();
-        print('🎉 User is now premium - banner ad removed');
-      } else if (!_isPremium && !_isBannerAdReady) {
-        print('📢 User is not premium, loading banner ad...');
-        _loadBannnerAds();
-      }
-      await _verifySubscriptionWithServer();
-    }
-  }
-
-  Future<void> _verifySubscriptionWithServer() async {
-    try {
-      print('🌐 [ProScreen] Starting Google Play verification...');
-      final isValid = await _subService.verifySubscriptionStatus();
-      print('🌐 [ProScreen] Server result: $isValid');
-
-      if (mounted && isValid != _isPremium) {
-        print(
-          '🌐 [ProScreen] ⚠️ SERVER SAYS DIFFERENT! $_isPremium → $isValid',
-        );
-        setState(() {
-          _isPremium = isValid;
-        });
-        print('🌐 [ProScreen] ✅ UI updated');
-      }
-    } catch (e) {
-      print('❌ [ProScreen] Error verifying: $e');
-    }
-  }
-
-  void _disposeBannerAd() {
-    if (_bannerAd != null) {
-      _bannerAd!.dispose();
-      _bannerAd = null;
-      setState(() {
-        _isBannerAdReady = false;
-      });
-      print('🗑️ Banner ad disposed');
-    }
+    print('✅ [StatusApp] Initialized');
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _timer?.cancel();
-    _subscriptionListener?.cancel();
-    _bannerAd?.dispose();
+    _statusCheckTimer?.cancel();
+    print('🗑️ [StatusApp] Disposed');
     super.dispose();
-  }
-
-  void _loadBannnerAds() {
-    print("📢 Loading Banner Ad...");
-    final String AdUnitId = Platform.isAndroid
-        ? "ca-app-pub-5697489208417002/9726020583"
-        : "ca-app-pub-3940256099942544/2435281174";
-    final BannerAd banner = BannerAd(
-      size: AdSize.banner,
-      adUnitId: AdUnitId,
-      listener: BannerAdListener(
-        onAdLoaded: (ad) {
-          print("✅ Banner Ad Loaded Successfully!");
-          setState(() {
-            _bannerAd = ad as BannerAd;
-            _isBannerAdReady = true;
-          });
-        },
-        onAdFailedToLoad: (ad, error) {
-          print("❌ Banner Ad Failed to Load: ${error.message}");
-          ad.dispose();
-        },
-        onAdOpened: (ad) => print("📌 Banner Ad Opened (clicked)."),
-        onAdClosed: (ad) => print("📌 Banner Ad Closed."),
-      ),
-      request: const AdRequest(),
-    );
-    banner.load();
   }
 
   Widget _build(int index) {
@@ -541,19 +452,35 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // 🔥 Get banner from global AdsController
+    final adsController = AdsController.instance;
+
     return Scaffold(
       body: _build(_selectedIndex),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ✅ Banner ad appears within 30 seconds after subscription expires
-          if (!_isPremium && _isBannerAdReady && _bannerAd != null)
-            Container(
-              width: _bannerAd!.size.width.toDouble(),
-              height: _bannerAd!.size.height.toDouble(),
-              alignment: Alignment.center,
-              child: AdWidget(ad: _bannerAd!),
-            ),
+          // 🔥 USE ValueListenableBuilder to rebuild when banner status changes
+          ValueListenableBuilder<bool>(
+            valueListenable: adsController.bannerStatusNotifier,
+            builder: (context, hasBanner, child) {
+              // Only show banner if it's loaded and available
+              if (hasBanner && adsController.bannerAd != null) {
+                print('📱 [UI] Displaying banner ad');
+                return Container(
+                  width: adsController.bannerAd!.size.width.toDouble(),
+                  height: adsController.bannerAd!.size.height.toDouble(),
+                  alignment: Alignment.center,
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  child: AdWidget(ad: adsController.bannerAd!),
+                );
+              }
+              // Return empty container if no banner
+              print('📱 [UI] No banner to display');
+              return const SizedBox.shrink();
+            },
+          ),
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(

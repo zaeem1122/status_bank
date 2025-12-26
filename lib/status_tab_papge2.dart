@@ -273,32 +273,22 @@ class _StatusTabPage2State extends State<StatusTabPage2>
     }
   }
 
-  Future<void> saveFile(Map<String, dynamic> fileMap) async {
+  // 🆕 Save to Gallery (Android 10+ compatible) - Business WhatsApp
+  Future<void> saveToGallery(Map<String, dynamic> fileMap) async {
     try {
-      if (_saveDirPath == null) {
-        await _initializeSaveDirectory();
-      }
-
-      if (_saveDirPath == null) {
-        showCustomOverlay(context, "Failed to access storage");
-        return;
-      }
-
-      final dir = Directory(_saveDirPath!);
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
-
       final fileName = fileMap['name'] as String;
-      final savedPath = "${dir.path}/$fileName";
-      final savedFile = File(savedPath);
+      final isVideo = fileMap['type'].toString().startsWith('video/');
 
-      if (await savedFile.exists()) {
+      // Check if file already exists in gallery
+      final alreadyExists = await platform.invokeMethod('checkFileExistsInGallery', {
+        'fileName': fileName,
+        'isVideo': isVideo,
+      });
+
+      if (alreadyExists == true) {
         showCustomOverlay(
           context,
-          fileMap['type'].toString().startsWith('video/')
-              ? "Video Already Downloaded"
-              : "Image Already Downloaded",
+          isVideo ? "Video Already Downloaded" : "Image Already Downloaded",
         );
         return;
       }
@@ -310,18 +300,24 @@ class _StatusTabPage2State extends State<StatusTabPage2>
         return;
       }
 
-      await savedFile.writeAsBytes(bytes as Uint8List);
+      // Use native method to save to gallery
+      final success = await platform.invokeMethod('saveToGallery', {
+        'bytes': bytes,
+        'fileName': fileName,
+        'isVideo': isVideo,
+      });
 
-      if (await savedFile.exists()) {
-        final fileSize = await savedFile.length();
-        print('✅ File saved successfully: $savedPath (${fileSize} bytes)');
-        showCustomOverlay(context, "File Saved Successfully");
+      if (success == true) {
+        showCustomOverlay(
+          context,
+          isVideo ? "Video saved to Gallery" : "Image saved to Gallery",
+        );
       } else {
-        showCustomOverlay(context, "Failed to save file");
+        showCustomOverlay(context, "Failed to save to gallery");
       }
     } catch (e) {
-      print('❌ Error saving file: $e');
-      showCustomOverlay(context, "Failed to save: ${e.toString().contains('Operation not permitted') ? 'Storage access denied' : 'Error'}");
+      print('❌ Error saving to gallery: $e');
+      showCustomOverlay(context, "Failed to save: ${e.toString()}");
     }
   }
 
@@ -348,20 +344,6 @@ class _StatusTabPage2State extends State<StatusTabPage2>
     if (selectedPaths.isEmpty) return;
 
     try {
-      if (_saveDirPath == null) {
-        await _initializeSaveDirectory();
-      }
-
-      if (_saveDirPath == null) {
-        showCustomOverlay(context, "Failed to access storage");
-        return;
-      }
-
-      final dir = Directory(_saveDirPath!);
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
-
       int savedCount = 0;
       int alreadyExistCount = 0;
       int failedCount = 0;
@@ -370,25 +352,36 @@ class _StatusTabPage2State extends State<StatusTabPage2>
         try {
           final fileMap = [...imageFiles, ...videoFiles].firstWhere((f) => f['uri'] == uri);
           final fileName = fileMap['name'] as String;
-          final savedPath = "${dir.path}/$fileName";
-          final savedFile = File(savedPath);
+          final isVideo = fileMap['type'].toString().startsWith('video/');
 
-          if (await savedFile.exists()) {
+          // Check if file already exists
+          final alreadyExists = await platform.invokeMethod('checkFileExistsInGallery', {
+            'fileName': fileName,
+            'isVideo': isVideo,
+          });
+
+          if (alreadyExists == true) {
             alreadyExistCount++;
-          } else {
-            final bytes = await platform.invokeMethod('readFileBytes', {'uri': uri});
-            if (bytes != null) {
-              await savedFile.writeAsBytes(bytes as Uint8List);
+            continue;
+          }
 
-              if (await savedFile.exists()) {
-                savedCount++;
-                print('✅ Saved: $fileName');
-              } else {
-                failedCount++;
-              }
+          final bytes = await platform.invokeMethod('readFileBytes', {'uri': uri});
+
+          if (bytes != null) {
+            final success = await platform.invokeMethod('saveToGallery', {
+              'bytes': bytes,
+              'fileName': fileName,
+              'isVideo': isVideo,
+            });
+
+            if (success == true) {
+              savedCount++;
+              print('✅ Saved to gallery: $fileName');
             } else {
               failedCount++;
             }
+          } else {
+            failedCount++;
           }
         } catch (e) {
           print('❌ Error saving file: $e');
@@ -403,7 +396,7 @@ class _StatusTabPage2State extends State<StatusTabPage2>
       if (savedCount > 0 && alreadyExistCount > 0) {
         showCustomOverlay(context, "$savedCount saved, $alreadyExistCount already existed");
       } else if (savedCount > 0) {
-        showCustomOverlay(context, "$savedCount files saved to StatusSaver/Business");
+        showCustomOverlay(context, "$savedCount files saved to Gallery");
       } else if (alreadyExistCount > 0) {
         showCustomOverlay(context, "All files already downloaded");
       } else if (failedCount > 0) {
@@ -567,7 +560,7 @@ class _StatusTabPage2State extends State<StatusTabPage2>
               if (!_isPremium) {
                 InterstitialService.show();
               }
-              saveFile(fileMap);
+              saveToGallery(fileMap); // 🆕 Changed to saveToGallery
             },
             onShare: () async {
               if (!_isPremium) {

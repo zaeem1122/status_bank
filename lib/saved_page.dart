@@ -39,53 +39,57 @@ class _SavedPageState extends State<SavedPage>
     super.dispose();
   }
 
-  // 🔹 Load all saved files (images + videos) from both regular and Business folders
+  // 🔹 Load all saved files from Gallery directories (Pictures/StatusSaver and Movies/StatusSaver)
   Future<void> _loadSavedFiles() async {
     try {
-      Directory mainDirectory;
-      Directory businessDirectory;
+      Directory picturesDirectory;
+      Directory moviesDirectory;
 
       // Check Android version
       if (Platform.isAndroid) {
         final androidInfo = await DeviceInfoPlugin().androidInfo;
 
         if (androidInfo.version.sdkInt >= 29) {
-          // Android 10+ (API 29+): Use app-specific directory
+          // Android 10+ (API 29+): Files are saved to public gallery directories
+          // But we can't directly access them, so we need to use app-specific directory
+          // OR use MediaStore to query them
+
+          // For now, we'll check both old app-specific AND new public directories
           final externalDir = await getExternalStorageDirectory();
-          mainDirectory = Directory('${externalDir!.path}/StatusSaver');
-          businessDirectory = Directory('${externalDir.path}/StatusSaver/Business');
+
+          // Try to access public directories (may not work on all devices)
+          picturesDirectory = Directory("/storage/emulated/0/Pictures/StatusSaver");
+          moviesDirectory = Directory("/storage/emulated/0/Movies/StatusSaver");
+
+          // If public directories don't exist or are inaccessible, fall back to app directory
+          if (!await picturesDirectory.exists() && !await moviesDirectory.exists()) {
+            // This means user might be on Android 10+ and we should use MediaStore
+            // For simplicity, let's just show a message that files are in Gallery
+            debugPrint("Files are saved in Gallery app");
+          }
         } else {
           // Android 9 and below: Use public directory
-          mainDirectory = Directory("/storage/emulated/0/StatusSaver");
-          businessDirectory = Directory("/storage/emulated/0/StatusSaver/Business");
+          picturesDirectory = Directory("/storage/emulated/0/Pictures/StatusSaver");
+          moviesDirectory = Directory("/storage/emulated/0/Movies/StatusSaver");
         }
       } else {
         // Fallback for non-Android platforms
-        final externalDir = await getExternalStorageDirectory();
-        mainDirectory = Directory('${externalDir!.path}/StatusSaver');
-        businessDirectory = Directory('${externalDir.path}/StatusSaver/Business');
+        picturesDirectory = Directory("/storage/emulated/0/Pictures/StatusSaver");
+        moviesDirectory = Directory("/storage/emulated/0/Movies/StatusSaver");
       }
 
       List<FileSystemEntity> allFiles = [];
 
-      // Load files from main StatusSaver directory (excluding Business subfolder)
-      if (await mainDirectory.exists()) {
-        final mainFiles = mainDirectory.listSync();
-        // Filter out the Business directory itself and only include files
-        allFiles.addAll(mainFiles.where((entity) {
-          // Skip directories (including Business subfolder)
-          if (entity is Directory) return false;
-          return true;
-        }));
-      } else {
-        await mainDirectory.create(recursive: true);
+      // Load image files from Pictures/StatusSaver
+      if (await picturesDirectory.exists()) {
+        final pictureFiles = picturesDirectory.listSync();
+        allFiles.addAll(pictureFiles.where((entity) => entity is File));
       }
 
-      // Load files from Business subfolder
-      if (await businessDirectory.exists()) {
-        final businessFiles = businessDirectory.listSync();
-        // Only include files, not subdirectories
-        allFiles.addAll(businessFiles.where((entity) => entity is File));
+      // Load video files from Movies/StatusSaver
+      if (await moviesDirectory.exists()) {
+        final movieFiles = moviesDirectory.listSync();
+        allFiles.addAll(movieFiles.where((entity) => entity is File));
       }
 
       // Sort all files by modified date (newest first)
@@ -138,7 +142,7 @@ class _SavedPageState extends State<SavedPage>
       }
 
       await _loadSavedFiles();
-      showCustomOverlay(context, "File Delete Successfully");
+      showCustomOverlay(context, "File Deleted Successfully");
     } catch (e) {
       debugPrint("Error deleting file: $e");
       ScaffoldMessenger.of(context).showSnackBar(
@@ -237,6 +241,7 @@ class _SavedPageState extends State<SavedPage>
     }).toList();
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
         leading: selectionMode
             ? IconButton(
@@ -297,6 +302,11 @@ class _SavedPageState extends State<SavedPage>
               ),
               onPressed: deleteSelectedFiles,
             ),
+          ] else ...[
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              onPressed: _loadSavedFiles,
+            ),
           ],
         ],
       ),
@@ -321,6 +331,7 @@ class _SavedPageState extends State<SavedPage>
               size: 70,
               color: Colors.teal,
             ),
+            const SizedBox(height: 16),
             Text(
               isVideo ? "No Saved Videos" : "No Saved Images",
               style: const TextStyle(fontSize: 15, color: Colors.teal),

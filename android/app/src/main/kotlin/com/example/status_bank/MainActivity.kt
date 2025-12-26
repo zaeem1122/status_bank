@@ -1,17 +1,21 @@
 package com.example.status_bank
 
+import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import androidx.annotation.NonNull
 import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
+import java.io.File
 
 
 class MainActivity : FlutterActivity() {
@@ -78,6 +82,17 @@ class MainActivity : FlutterActivity() {
                         result.success(thumbnail)
                     } else {
                         result.error("ERROR", "URI is null", null)
+                    }
+                }
+                "saveToGallery" -> saveToGallery(call, result)
+                "checkFileExistsInGallery" -> checkFileExistsInGallery(call, result)
+                "scanFile" -> {
+                    val path = call.argument<String>("path")
+                    if (path != null) {
+                        scanFile(path)
+                        result.success(null)
+                    } else {
+                        result.error("INVALID_PATH", "Path is null", null)
                     }
                 }
                 else -> result.notImplemented()
@@ -393,6 +408,204 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             e.printStackTrace()
             return null
+        }
+    }
+
+    // ========== GALLERY SAVE FUNCTIONS ==========
+
+    private fun checkFileExistsInGallery(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
+        try {
+            val fileName = call.argument<String>("fileName")
+            val isVideo = call.argument<Boolean>("isVideo") ?: false
+
+            if (fileName == null) {
+                result.error("INVALID_ARGUMENT", "Missing fileName", null)
+                return
+            }
+
+            val exists = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                checkFileExistsInMediaStore(fileName, isVideo)
+            } else {
+                checkFileExistsInLegacyStorage(fileName, isVideo)
+            }
+
+            result.success(exists)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            result.error("CHECK_ERROR", e.message, null)
+        }
+    }
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+    private fun checkFileExistsInMediaStore(fileName: String, isVideo: Boolean): Boolean {
+        return try {
+            val resolver = contentResolver
+            val collection = if (isVideo) {
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            } else {
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            }
+
+            val projection = arrayOf(MediaStore.MediaColumns.DISPLAY_NAME)
+            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND ${MediaStore.MediaColumns.RELATIVE_PATH} = ?"
+            val selectionArgs = arrayOf(
+                fileName,
+                if (isVideo) "Movies/StatusSaver/" else "Pictures/StatusSaver/"
+            )
+
+            resolver.query(collection, projection, selection, selectionArgs, null)?.use { cursor ->
+                cursor.count > 0
+            } ?: false
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    private fun checkFileExistsInLegacyStorage(fileName: String, isVideo: Boolean): Boolean {
+        return try {
+            val directory = if (isVideo) {
+                File(android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_MOVIES
+                ), "StatusSaver")
+            } else {
+                File(android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_PICTURES
+                ), "StatusSaver")
+            }
+
+            val file = File(directory, fileName)
+            file.exists()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    private fun saveToGallery(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
+        try {
+            val bytes = call.argument<ByteArray>("bytes")
+            val fileName = call.argument<String>("fileName")
+            val isVideo = call.argument<Boolean>("isVideo") ?: false
+
+            if (bytes == null || fileName == null) {
+                result.error("INVALID_ARGUMENT", "Missing bytes or fileName", null)
+                return
+            }
+
+            val saved = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                saveToMediaStore(bytes, fileName, isVideo)
+            } else {
+                saveToLegacyStorage(bytes, fileName, isVideo)
+            }
+
+            result.success(saved)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            result.error("SAVE_ERROR", e.message, null)
+        }
+    }
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+    private fun saveToMediaStore(bytes: ByteArray, fileName: String, isVideo: Boolean): Boolean {
+        return try {
+            val resolver = contentResolver
+
+            val collection = if (isVideo) {
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            } else {
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            }
+
+            val mimeType = if (isVideo) {
+                when {
+                    fileName.endsWith(".mp4", ignoreCase = true) -> "video/mp4"
+                    fileName.endsWith(".mkv", ignoreCase = true) -> "video/x-matroska"
+                    fileName.endsWith(".avi", ignoreCase = true) -> "video/x-msvideo"
+                    fileName.endsWith(".3gp", ignoreCase = true) -> "video/3gpp"
+                    else -> "video/mp4"
+                }
+            } else {
+                when {
+                    fileName.endsWith(".jpg", ignoreCase = true) ||
+                            fileName.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
+                    fileName.endsWith(".png", ignoreCase = true) -> "image/png"
+                    fileName.endsWith(".gif", ignoreCase = true) -> "image/gif"
+                    fileName.endsWith(".webp", ignoreCase = true) -> "image/webp"
+                    else -> "image/jpeg"
+                }
+            }
+
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH,
+                    if (isVideo) "Movies/StatusSaver" else "Pictures/StatusSaver"
+                )
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+
+            val uri = resolver.insert(collection, contentValues)
+
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { outputStream ->
+                    outputStream.write(bytes)
+                    outputStream.flush()
+                }
+
+                contentValues.clear()
+                contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                resolver.update(uri, contentValues, null, null)
+
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    private fun saveToLegacyStorage(bytes: ByteArray, fileName: String, isVideo: Boolean): Boolean {
+        return try {
+            val directory = if (isVideo) {
+                File(android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_MOVIES
+                ), "StatusSaver")
+            } else {
+                File(android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_PICTURES
+                ), "StatusSaver")
+            }
+
+            if (!directory.exists()) {
+                directory.mkdirs()
+            }
+
+            val file = File(directory, fileName)
+            file.writeBytes(bytes)
+
+            scanFile(file.absolutePath)
+
+            file.exists()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    private fun scanFile(path: String) {
+        try {
+            MediaScannerConnection.scanFile(
+                applicationContext,
+                arrayOf(path),
+                null
+            ) { scannedPath, uri ->
+                android.util.Log.d("MainActivity", "Media scanned: $scannedPath")
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }
