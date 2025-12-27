@@ -11,7 +11,7 @@ class ProScreen extends StatefulWidget {
   State<ProScreen> createState() => _ProScreenState();
 }
 
-class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
+class _ProScreenState extends State<ProScreen> {
   final _subService = SubscriptionService();
   bool isLoading = false;
   bool isPremium = false;
@@ -21,7 +21,6 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
 
     print('⚡ [ProScreen] Screen opened');
 
@@ -33,6 +32,7 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
 
     // ✅ Listen to subscription changes from SubscriptionService
     // This ensures UI updates immediately when subscription changes
+    // (including when cancelled from Play Console while app was closed)
     _subscriptionListener = SubscriptionService.subscriptionStatusStream.listen(
           (premium) {
         print('🔔 [ProScreen] Subscription status changed: $premium');
@@ -50,17 +50,8 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
   void dispose() {
     print('👋 [ProScreen] Screen closing');
     _subscriptionListener?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
     _subService.dispose();
     super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      print('🔄 [ProScreen] App resumed - checking status');
-      _checkPremiumStatus();
-    }
   }
 
   Future<void> _initializeSubscription() async {
@@ -201,7 +192,7 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
             ),
 
             // ✅ Shows "Active" badge when subscribed
-            // Will disappear automatically via subscription stream
+            // Will disappear automatically via subscription stream when cancelled
             if (isPremium)
               Container(
                 margin: const EdgeInsets.only(bottom: 40),
@@ -272,7 +263,7 @@ class _ProScreenState extends State<ProScreen> with WidgetsBindingObserver {
                     ),
                   )
                       : Text(
-                    isPremium ? "SUBSCRIBED ✓" : "START FREE TRIAL",
+                    isPremium ? "SUBSCRIBED ✓" : "BUY NOW",
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,

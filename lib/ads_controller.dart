@@ -15,7 +15,7 @@ class AdsController {
   BannerAd? bannerAd;
   bool isBannerLoaded = false;
 
-  // 🔥 ValueNotifier to trigger UI rebuilds when banner status changes
+  // ✅ ValueNotifier to trigger UI rebuilds when banner status changes
   final ValueNotifier<bool> bannerStatusNotifier = ValueNotifier<bool>(false);
 
   // Subscription listener
@@ -85,7 +85,7 @@ class AdsController {
         onAdLoaded: (ad) {
           print('✅ [AdsController] Banner Ad Loaded Successfully!');
           isBannerLoaded = true;
-          // 🔥 Notify UI to rebuild
+          // ✅ Notify UI to rebuild
           bannerStatusNotifier.value = true;
         },
         onAdFailedToLoad: (ad, error) {
@@ -93,7 +93,6 @@ class AdsController {
           ad.dispose();
           bannerAd = null;
           isBannerLoaded = false;
-          // 🔥 Notify UI to rebuild
           bannerStatusNotifier.value = false;
 
           // Retry after 5 seconds
@@ -121,7 +120,7 @@ class AdsController {
       bannerAd!.dispose();
       bannerAd = null;
       isBannerLoaded = false;
-      // 🔥 Notify UI to rebuild
+      // ✅ Notify UI to rebuild
       bannerStatusNotifier.value = false;
       print('✅ [AdsController] Banner ad disposed successfully');
     } else {

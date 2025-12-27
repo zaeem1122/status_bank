@@ -35,15 +35,109 @@ class SubscriptionService {
     await _subscription?.cancel();
     _subscription = _iap.purchaseStream.listen(_listenToPurchase);
 
+    // 🔥 CRITICAL: Auto-restore on every app startup
+    print('🚀 [init] AUTO-RESTORING subscription on app startup...');
+    await autoRestoreOnStartup();
+
     // ✅ Start background checking when service initializes
     startBackgroundChecking();
+  }
+
+  // 🔥 NEW: Auto-restore purchases on every app startup
+  static Future<void> autoRestoreOnStartup() async {
+    try {
+      print('🔄 [autoRestoreOnStartup] Starting automatic restore...');
+
+      final prefs = await SharedPreferences.getInstance();
+      final hadPremium = prefs.getBool("isPremium") ?? false;
+
+      print('🔄 [autoRestoreOnStartup] Current local status: $hadPremium');
+
+      // Clear local data to force fresh check with Play Store
+      await prefs.remove("isPremium");
+      await prefs.remove("subscriptionExpiry");
+
+      // Check with Play Store
+      final iap = InAppPurchase.instance;
+      await iap.restorePurchases();
+
+      // Wait for purchase listener to process
+      final waitTime = isTestMode ? 3 : 5;
+      await Future.delayed(Duration(seconds: waitTime));
+
+      // Check final status after restore
+      final isPremiumNow = await SubscriptionService.isPremium();
+
+      print('🔄 [autoRestoreOnStartup] Status after Play Store check: $isPremiumNow');
+
+      // Emit current status to all listeners
+      _subscriptionStatusController.add(isPremiumNow);
+
+      if (hadPremium && !isPremiumNow) {
+        print('⚠️ [autoRestoreOnStartup] Subscription was cancelled/refunded/expired!');
+      } else if (isPremiumNow) {
+        print('✅ [autoRestoreOnStartup] Active subscription restored');
+      } else {
+        print('ℹ️ [autoRestoreOnStartup] No active subscription found');
+      }
+    } catch (e) {
+      print('❌ [autoRestoreOnStartup] Error: $e');
+      // On error, check local status and emit
+      final localStatus = await SubscriptionService.isPremium();
+      _subscriptionStatusController.add(localStatus);
+    }
+  }
+
+  // 🔥 IMPROVED: Force immediate verification (called when app resumes)
+  static Future<void> verifyNow() async {
+    print('🔄 [verifyNow] ⚡ IMMEDIATE verification triggered');
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final hadPremium = prefs.getBool("isPremium") ?? false;
+
+      print('🔄 [verifyNow] Current status: $hadPremium');
+
+      if (!hadPremium) {
+        print('🔄 [verifyNow] User not premium, skipping Play Store check');
+        _subscriptionStatusController.add(false);
+        return;
+      }
+
+      // 🔥 CRITICAL: For premium users, ALWAYS verify with Play Store immediately
+      print('🔄 [verifyNow] User is premium - verifying with Play Store NOW');
+
+      final iap = InAppPurchase.instance;
+      await iap.restorePurchases();
+
+      // Wait for purchase listener to process
+      final waitTime = isTestMode ? 3 : 5;
+      await Future.delayed(Duration(seconds: waitTime));
+
+      // Check final status after restore
+      final isPremiumNow = await SubscriptionService.isPremium();
+
+      print('🔄 [verifyNow] Status after Play Store check: $isPremiumNow');
+
+      // Always emit the result
+      _subscriptionStatusController.add(isPremiumNow);
+
+      if (hadPremium && !isPremiumNow) {
+        print('🔥 [verifyNow] ⚠️ REFUND DETECTED! Subscription was cancelled/refunded!');
+      }
+    } catch (e) {
+      print('❌ [verifyNow] Error: $e');
+      final localStatus = await SubscriptionService.isPremium();
+      _subscriptionStatusController.add(localStatus);
+    }
   }
 
   // ✅ Start background checking
   static void startBackgroundChecking() {
     if (_backgroundTimer != null) return;
 
-    final checkInterval = isTestMode ? 10 : 30;
+    // 🔥 IMPROVED: More frequent checks for faster refund detection
+    final checkInterval = isTestMode ? 5 : 15; // Reduced from 10s/30s to 5s/15s
     print('⏰ [SubscriptionService] Starting background checks every $checkInterval seconds (${isTestMode ? "TEST" : "PRODUCTION"} mode)');
 
     // Check immediately
@@ -54,69 +148,67 @@ class SubscriptionService {
     });
   }
 
-  // 🔥 FIXED: This is the critical method that was causing the issue
+  // 🔥 COMPLETELY REWRITTEN: Faster refund detection
   static Future<void> _performBackgroundCheck() async {
     _checkCounter++;
     print('🔍 [Background] ═══ Check #$_checkCounter START ═══');
 
     try {
-      // ✅ CRITICAL FIX: Always check isPremium() which validates expiry date
+      // Step 1: Always check local expiry first (this is instant)
       final currentPremiumStatus = await SubscriptionService.isPremium();
-      print('🔍 [Background] Current premium status: $currentPremiumStatus');
+      print('🔍 [Background] Local premium status: $currentPremiumStatus');
 
-      // ✅ ALWAYS emit the current status to ensure listeners are in sync
-      // This fixes the case where expiry is detected but stream isn't emitted
-      print('🔍 [Background] 📡 Emitting status to stream: $currentPremiumStatus');
-      _subscriptionStatusController.add(currentPremiumStatus);
-
-      // If not premium, we're done - no need to verify with Play Store
+      // If not premium locally, emit and we're done
       if (!currentPremiumStatus) {
-        print('🔍 [Background] Not premium - skipping Play Store verification');
+        print('🔍 [Background] Not premium locally - emitting false');
+        _subscriptionStatusController.add(false);
         print('🔍 [Background] ═══ Check #$_checkCounter END ═══');
         return;
       }
 
-      // ✅ If premium, verify with Play Store periodically
-      // Test mode: Every 3 checks = 30 seconds
-      // Production: Every 6 checks = 3 minutes
-      final verifyInterval = isTestMode ? 3 : 6;
+      // Step 2: User is premium locally - verify with Play Store
+      // 🔥 KEY CHANGE: Check with Play Store MORE FREQUENTLY
+      // Test mode: Every check (every 5 seconds)
+      // Production: Every 2 checks (every 30 seconds instead of 3 minutes)
+      final verifyInterval = isTestMode ? 1 : 2;
 
       if (_checkCounter % verifyInterval != 0) {
-        print('🔍 [Background] Premium but skipping Play Store check (will verify at #${(_checkCounter ~/ verifyInterval + 1) * verifyInterval})');
+        print('🔍 [Background] Premium but skipping Play Store check until #${(_checkCounter ~/ verifyInterval + 1) * verifyInterval}');
+        // Still emit current status to keep listeners updated
+        _subscriptionStatusController.add(true);
         print('🔍 [Background] ═══ Check #$_checkCounter END ═══');
         return;
       }
 
       print('🔍 [Background] ⏰ Time for Play Store verification!');
 
-      // Verify with Play Store
       final prefs = await SharedPreferences.getInstance();
       final originalIsPremium = prefs.getBool("isPremium") ?? false;
-      final originalExpiry = prefs.getString("subscriptionExpiry");
 
-      print('🔍 [Background] Before restore: isPremium=$originalIsPremium, expiry=$originalExpiry');
+      print('🔍 [Background] Verifying with Play Store...');
 
-      // Call restore to check with Play Store
+      // Verify with Play Store
       final iap = InAppPurchase.instance;
       await iap.restorePurchases();
 
       // Wait for purchase listener to process
-      final waitTime = isTestMode ? 3 : 5;
+      final waitTime = isTestMode ? 2 : 4; // Reduced wait time
       await Future.delayed(Duration(seconds: waitTime));
 
       // Check final status after restore
       final finalPremiumStatus = await SubscriptionService.isPremium();
-      final afterExpiry = prefs.getString("subscriptionExpiry");
 
-      print('🔍 [Background] After restore: isPremium=$finalPremiumStatus, expiry=$afterExpiry');
+      print('🔍 [Background] Play Store result: $finalPremiumStatus');
 
-      // ✅ CRITICAL: Emit the final status regardless of what it is
-      if (originalIsPremium != finalPremiumStatus) {
-        print('🔍 [Background] ⚠️ STATUS CHANGED: $originalIsPremium → $finalPremiumStatus');
-        print('🔍 [Background] 📡 Emitting changed status: $finalPremiumStatus');
-        _subscriptionStatusController.add(finalPremiumStatus);
-      } else {
+      // Emit the current status
+      _subscriptionStatusController.add(finalPremiumStatus);
+
+      if (originalIsPremium && !finalPremiumStatus) {
+        print('🔥 [Background] ⚠️⚠️⚠️ REFUND DETECTED! Subscription cancelled/refunded! ⚠️⚠️⚠️');
+      } else if (originalIsPremium == finalPremiumStatus) {
         print('🔍 [Background] ✅ Status unchanged: $finalPremiumStatus');
+      } else {
+        print('🔍 [Background] Status changed: $originalIsPremium → $finalPremiumStatus');
       }
 
       print('🔍 [Background] ═══ Check #$_checkCounter END ═══');
@@ -198,7 +290,6 @@ class SubscriptionService {
     }
   }
 
-  // 🔥 FIXED: Use correct duration based on test mode
   Future<void> _handleActivePurchase(PurchaseDetails purchase) async {
     try {
       DateTime expiryDate;

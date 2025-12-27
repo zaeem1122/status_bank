@@ -241,7 +241,7 @@ class _SavedPageState extends State<SavedPage>
     }).toList();
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         leading: selectionMode
             ? IconButton(

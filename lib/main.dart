@@ -13,7 +13,7 @@ import 'package:status_bank/setting_page.dart';
 import 'package:status_bank/status_tab_page.dart';
 import 'package:status_bank/status_tab_papge2.dart';
 import 'package:status_bank/subscription_service.dart';
-import 'package:status_bank/ads_controller.dart'; // 🔥 NEW IMPORT
+import 'package:status_bank/ads_controller.dart';
 
 import 'interstitial_ad_service.dart';
 
@@ -428,6 +428,33 @@ class _StatusAppState extends State<StatusApp> with WidgetsBindingObserver {
     _statusCheckTimer?.cancel();
     print('🗑️ [StatusApp] Disposed');
     super.dispose();
+  }
+
+  // 🔥 CRITICAL FIX: Automatically verify subscription when app resumes
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    print('📱 [App Lifecycle] State changed to: $state');
+
+    if (state == AppLifecycleState.resumed) {
+      // 🔥 User just returned to the app
+      print('📱 [App Lifecycle] ⚡ App resumed - triggering immediate verification');
+
+      // 🔥 KEY FIX: Call verifyNow() which checks with Play Store immediately
+      // This will detect refunds/cancellations that happened while app was closed
+      SubscriptionService.verifyNow().then((_) {
+        print('📱 [App Lifecycle] ✅ Verification complete');
+      }).catchError((error) {
+        print('📱 [App Lifecycle] ❌ Verification error: $error');
+      });
+    } else if (state == AppLifecycleState.paused) {
+      print('📱 [App Lifecycle] App paused/backgrounded');
+    } else if (state == AppLifecycleState.inactive) {
+      print('📱 [App Lifecycle] App inactive');
+    } else if (state == AppLifecycleState.detached) {
+      print('📱 [App Lifecycle] App detached');
+    }
   }
 
   Widget _build(int index) {
